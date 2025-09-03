@@ -1,10 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:file_picker/file_picker.dart';
 
-import '../viewmodels/upload_viewmodel.dart';
-import '../../../file_manager/data/datasources/local_file_datasource.dart';
-import '../../../../core/di/injection.dart';
+import '../widgets/file_upload_widget.dart';
+import '../widgets/folder_picker_dialog.dart';
 
 class UploadScreen extends ConsumerStatefulWidget {
   final String targetFolderPath;
@@ -15,55 +13,44 @@ class UploadScreen extends ConsumerStatefulWidget {
 }
 
 class _UploadScreenState extends ConsumerState<UploadScreen> {
-  PlatformFile? _picked;
+  late String _folder;
+
+  @override
+  void initState() {
+    super.initState();
+    _folder = widget.targetFolderPath.isEmpty ? '/' : widget.targetFolderPath;
+  }
+
+  Future<void> _pickFolder() async {
+    final selected = await showDialog<String>(
+      context: context,
+      builder: (_) => FolderPickerDialog(initialPath: _folder),
+    );
+    if (selected != null && selected.isNotEmpty) {
+      setState(() => _folder = selected);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final state = ref.watch(uploadViewModelProvider);
     return Scaffold(
-      appBar: AppBar(title: const Text('Upload File')),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Target folder: ${widget.targetFolderPath}'),
-            const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: () async {
-                _picked = await getIt<LocalFileDatasource>().pickSingleFile();
-                setState(() {});
-              },
-              child: const Text('Choose File'),
-            ),
-            const SizedBox(height: 16),
-            if (_picked != null) Text('Selected: ${_picked!.name}'),
-            const SizedBox(height: 16),
-              if (state.uploading) ...[
-                const LinearProgressIndicator(),
-                const SizedBox(height: 8),
-                Text(state.progress == null
-                    ? 'Uploading...'
-                    : '${state.progress!.fileName}: ${state.progress!.progressPercentage.toStringAsFixed(0)}%'),
-              ],
-            const Spacer(),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: _picked == null || state.uploading
-                    ? null
-                    : () async {
-                        final remotePath = '${widget.targetFolderPath.replaceAll(RegExp(r"/+") , '/')}/${_picked!.name}'.replaceAll(RegExp(r"/+"), '/');
-                        await ref.read(uploadViewModelProvider.notifier).upload(_picked!.path!, remotePath);
-                        if (!mounted) return;
-                        if (ref.read(uploadViewModelProvider).error == null) {
-                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Upload complete')));
-                        }
-                      },
-                child: const Text('Upload'),
-              ),
-            ),
-          ],
+      appBar: AppBar(
+        title: const Text('Upload Interface'),
+        actions: [
+          IconButton(
+            tooltip: 'Choose Folder',
+            icon: const Icon(Icons.folder_open),
+            onPressed: _pickFolder,
+          ),
+        ],
+      ),
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 720),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: FileUploadWidget(folderPath: _folder, onFolderChanged: (p) => setState(() => _folder = p)),
+          ),
         ),
       ),
     );

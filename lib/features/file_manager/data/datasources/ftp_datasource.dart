@@ -10,7 +10,12 @@ abstract class FTPDatasource {
   Future<List<FTPFolder>> listFolders(FTPCredentials creds, String path);
   Future<List<FTPFile>> listFiles(FTPCredentials creds, String path);
   Future<void> createFolder(FTPCredentials creds, String path);
-  Future<void> uploadFile(FTPCredentials creds, File file, String remotePath);
+  Future<void> uploadFile(
+    FTPCredentials creds,
+    File file,
+    String remotePath, {
+    dynamic onProgress,
+  });
   Future<void> deleteFile(FTPCredentials creds, String remotePath);
 }
 
@@ -25,6 +30,10 @@ class FTPDatasourceImpl implements FTPDatasource {
       securityType: c.isSecure ? SecurityType.FTPS : SecurityType.FTP,
     );
     await ftp.connect();
+    // Force binary transfer when available to avoid corruption
+    try {
+      await (ftp as dynamic).setTransferType(TransferType.binary);
+    } catch (_) {}
     return ftp;
   }
 
@@ -91,10 +100,27 @@ class FTPDatasourceImpl implements FTPDatasource {
 
   @override
   Future<void> uploadFile(
-      FTPCredentials creds, File file, String remotePath) async {
+    FTPCredentials creds,
+    File file,
+    String remotePath, {
+    dynamic onProgress,
+  }) async {
     final ftp = await _client(creds);
     try {
-      await ftp.uploadFile(file, sRemoteName: remotePath);
+      // remotePath may include directories; change to that directory first
+      String dir = '/';
+      String name = remotePath;
+      final idx = remotePath.replaceAll('\\', '/').lastIndexOf('/');
+      if (idx >= 0) {
+        dir = idx == 0 ? '/' : remotePath.substring(0, idx);
+        name = remotePath.substring(idx + 1);
+      }
+      await _changeTo(ftp, dir);
+      await ftp.uploadFile(
+        file,
+        sRemoteName: name,
+        onProgress: onProgress,
+      );
     } finally {
       await ftp.disconnect();
     }

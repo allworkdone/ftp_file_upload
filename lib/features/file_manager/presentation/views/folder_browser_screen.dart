@@ -64,22 +64,26 @@ class _FolderBrowserScreenState extends State<FolderBrowserScreen> {
                   if (_error != null)
                     Padding(
                       padding: const EdgeInsets.all(16),
-                      child: Text(_error!, style: const TextStyle(color: Colors.red)),
+                      child: Text(_error!,
+                          style: const TextStyle(color: Colors.red)),
                     ),
                   if (_folders.isNotEmpty)
                     const Padding(
                       padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
-                      child: Text('Folders', style: TextStyle(fontWeight: FontWeight.bold)),
+                      child: Text('Folders',
+                          style: TextStyle(fontWeight: FontWeight.bold)),
                     ),
                   ..._folders.map((f) => ListTile(
                         leading: const Icon(Icons.folder),
                         title: Text(f.name),
-                        onTap: () => context.push(RouteNames.folderBrowserPath(f.fullPath)),
+                        onTap: () => context
+                            .push(RouteNames.folderBrowserPath(f.fullPath)),
                       )),
                   if (_files.isNotEmpty)
                     const Padding(
                       padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
-                      child: Text('Files', style: TextStyle(fontWeight: FontWeight.bold)),
+                      child: Text('Files',
+                          style: TextStyle(fontWeight: FontWeight.bold)),
                     ),
                   ..._files.map((fi) => ListTile(
                         leading: const Icon(Icons.insert_drive_file),

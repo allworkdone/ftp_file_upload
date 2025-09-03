@@ -20,6 +20,11 @@ class FileManagerScreen extends ConsumerWidget {
             icon: const Icon(Icons.folder_open),
             onPressed: () => context.go(RouteNames.folderBrowserPath('/')),
           ),
+          IconButton(
+            tooltip: 'Upload',
+            icon: const Icon(Icons.cloud_upload_outlined),
+            onPressed: () => context.go(RouteNames.uploadPath(folderPath: state.currentPath)),
+          ),
         ],
       ),
       body: state.loading
