@@ -28,6 +28,18 @@ class FTPDatasourceImpl implements FTPDatasource {
     return ftp;
   }
 
+  Future<void> _changeTo(FTPConnect ftp, String path) async {
+    try {
+      if (path.isEmpty || path == '/') {
+        await ftp.changeDirectory('/');
+      } else {
+        await ftp.changeDirectory(path);
+      }
+    } catch (_) {
+      // Ignore if server rejects; we'll try listing current directory
+    }
+  }
+
   @override
   Future<void> createFolder(FTPCredentials creds, String path) async {
     final ftp = await _client(creds);
@@ -45,6 +57,7 @@ class FTPDatasourceImpl implements FTPDatasource {
   Future<List<FTPFolder>> listFolders(FTPCredentials creds, String path) async {
     final ftp = await _client(creds);
     try {
+      await _changeTo(ftp, path);
       final entries = await ftp.listDirectoryContent();
       final folders = entries
           .where((e) => e.type == FTPEntryType.DIR)
@@ -60,6 +73,7 @@ class FTPDatasourceImpl implements FTPDatasource {
   Future<List<FTPFile>> listFiles(FTPCredentials creds, String path) async {
     final ftp = await _client(creds);
     try {
+      await _changeTo(ftp, path);
       final entries = await ftp.listDirectoryContent();
       final files = entries
           .where((e) => e.type == FTPEntryType.FILE)
@@ -76,7 +90,8 @@ class FTPDatasourceImpl implements FTPDatasource {
   }
 
   @override
-  Future<void> uploadFile(FTPCredentials creds, File file, String remotePath) async {
+  Future<void> uploadFile(
+      FTPCredentials creds, File file, String remotePath) async {
     final ftp = await _client(creds);
     try {
       await ftp.uploadFile(file, sRemoteName: remotePath);

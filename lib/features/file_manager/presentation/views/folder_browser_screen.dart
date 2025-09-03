@@ -5,6 +5,8 @@ import '../../../file_manager/domain/entities/ftp_file.dart';
 import '../../../file_manager/domain/usecases/get_folders_usecase.dart';
 import '../../../file_manager/domain/usecases/get_files_usecase.dart';
 import '../../../../core/di/injection.dart';
+import '../../../../app/router/route_names.dart';
+import 'package:go_router/go_router.dart';
 
 class FolderBrowserScreen extends StatefulWidget {
   final String folderPath;
@@ -72,6 +74,7 @@ class _FolderBrowserScreenState extends State<FolderBrowserScreen> {
                   ..._folders.map((f) => ListTile(
                         leading: const Icon(Icons.folder),
                         title: Text(f.name),
+                        onTap: () => context.push(RouteNames.folderBrowserPath(f.fullPath)),
                       )),
                   if (_files.isNotEmpty)
                     const Padding(
