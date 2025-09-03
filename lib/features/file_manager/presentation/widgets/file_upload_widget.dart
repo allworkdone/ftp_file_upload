@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:desktop_drop/desktop_drop.dart';
+import 'package:cross_file/cross_file.dart';
 
 import '../../domain/usecases/create_folder_usecase.dart';
 import '../../domain/usecases/get_folders_usecase.dart';
@@ -16,7 +18,8 @@ import 'folder_picker_dialog.dart';
 class FileUploadWidget extends ConsumerStatefulWidget {
   final String folderPath;
   final ValueChanged<String>? onFolderChanged;
-  const FileUploadWidget({super.key, required this.folderPath, this.onFolderChanged});
+  const FileUploadWidget(
+      {super.key, required this.folderPath, this.onFolderChanged});
 
   @override
   ConsumerState<FileUploadWidget> createState() => _FileUploadWidgetState();
@@ -31,6 +34,8 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
   bool _loadingFolders = false;
   List<FTPFolder> _folders = const [];
   int _chunkSizeMB = 4; // UI-only; ftpconnect doesn't support manual chunking
+  bool _isDragging = false; // Track drag state
+
   List<DropdownMenuItem<String>> _buildFolderItems() {
     final seen = <String>{};
     final items = <DropdownMenuItem<String>>[];
@@ -40,6 +45,7 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
         items.add(DropdownMenuItem(value: val, child: Text(val)));
       }
     }
+
     if (_folderCtrl.text.isNotEmpty) add(_folderCtrl.text);
     for (final f in _folders) {
       add(f.fullPath);
@@ -56,7 +62,8 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
   @override
   void initState() {
     super.initState();
-    _folderCtrl = TextEditingController(text: widget.folderPath.isEmpty ? '/' : widget.folderPath);
+    _folderCtrl = TextEditingController(
+        text: widget.folderPath.isEmpty ? '/' : widget.folderPath);
     _loadFolders(_folderCtrl.text);
   }
 
@@ -94,11 +101,87 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
   }
 
   Future<void> _pickFile() async {
+    print('[FileUpload] Starting file picker...');
     _picked = await getIt<LocalFileDatasource>().pickSingleFile();
     if (_picked != null) {
+      print('[FileUpload] File picked: ${_picked!.name}');
+      print('[FileUpload] File path: ${_picked!.path}');
+      print('[FileUpload] File size: ${_picked!.size}');
       _fileNameCtrl.text = _picked!.name;
+    } else {
+      print('[FileUpload] No file selected');
     }
     setState(() {});
+  }
+
+  // Handle dropped files
+  void _handleDroppedFiles(List<XFile> files) async {
+    print('[FileUpload] Handling ${files.length} dropped files');
+
+    setState(() {
+      _isDragging = false;
+    });
+
+    if (files.isEmpty) {
+      print('[FileUpload] No files in drop');
+      return;
+    }
+
+    try {
+      // Take the first file (since this widget handles single file)
+      final xFile = files.first;
+      print('[FileUpload] Processing dropped file: ${xFile.name}');
+      print('[FileUpload] File path: ${xFile.path}');
+
+      // Check if file exists
+      final file = File(xFile.path);
+      if (!await file.exists()) {
+        print('[FileUpload] Dropped file does not exist: ${xFile.path}');
+        _showError('File does not exist: ${xFile.name}');
+        return;
+      }
+
+      // Get file size
+      final fileSize = await file.length();
+      print('[FileUpload] File size: $fileSize bytes');
+
+      // Create PlatformFile from XFile
+      _picked = PlatformFile(
+        name: xFile.name,
+        size: fileSize,
+        path: xFile.path,
+      );
+
+      _fileNameCtrl.text = _picked!.name;
+      setState(() {});
+
+      print(
+          '[FileUpload] Successfully processed dropped file: ${_picked!.name}');
+
+      // Show success message
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('File added: ${_picked!.name}'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      print('[FileUpload] Error processing dropped file: $e');
+      _showError('Failed to process dropped file: $e');
+    }
+  }
+
+  void _showError(String message) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   Future<void> _createFolder() async {
@@ -107,47 +190,102 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Create Folder'),
-        content: TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: 'Folder name')),
+        content: TextField(
+            controller: nameCtrl,
+            decoration: const InputDecoration(labelText: 'Folder name')),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-          ElevatedButton(onPressed: () => Navigator.pop(ctx, nameCtrl.text.trim()), child: const Text('Create')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, nameCtrl.text.trim()),
+              child: const Text('Create')),
         ],
       ),
     );
     if (created != null && created.isNotEmpty) {
       final base = _folderCtrl.text.trim();
-      final newPath = (
-        '${base.endsWith('/') ? base : base + '/'}$created'
-      ).replaceAll(RegExp(r"/+"), '/');
+      final newPath = ('${base.endsWith('/') ? base : base + '/'}$created')
+          .replaceAll(RegExp(r"/+"), '/');
       await getIt<CreateFolderUsecase>()(newPath);
       _folderCtrl.text = newPath;
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Folder created: $newPath')));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Folder created: $newPath')));
       }
     }
   }
 
   Future<void> _upload() async {
-    setState(() { _link = null; _error = null; });
+    setState(() {
+      _link = null;
+      _error = null;
+    });
     final file = _picked;
     if (file == null) return;
-    final folder = _folderCtrl.text.trim().isEmpty ? '/' : _folderCtrl.text.trim();
-    final fileName = _fileNameCtrl.text.trim().isEmpty ? file.name : _fileNameCtrl.text.trim();
-    final remotePath = (
-      '${folder.endsWith('/') ? folder : folder + '/'}$fileName'
-    ).replaceAll(RegExp(r"/+"), '/');
+
+    final folder =
+        _folderCtrl.text.trim().isEmpty ? '/' : _folderCtrl.text.trim();
+    final fileName = _fileNameCtrl.text.trim().isEmpty
+        ? file.name
+        : _fileNameCtrl.text.trim();
+    final remotePath =
+        ('${folder.endsWith('/') ? folder : folder + '/'}$fileName')
+            .replaceAll(RegExp(r"/+"), '/');
+
+    print('[FileUpload] Starting upload...');
+    print('[FileUpload] Local file: ${file.name}');
+    print('[FileUpload] Local path: ${file.path}');
+    print('[FileUpload] Has bytes: ${file.bytes != null}');
+    print('[FileUpload] Remote path: $remotePath');
 
     try {
-      await ref.read(uploadViewModelProvider.notifier).upload(file.path!, remotePath);
+      String? uploadPath = file.path;
+
+      // If we don't have a valid path but have bytes, create a temporary file
+      if ((uploadPath == null || !await File(uploadPath).exists()) &&
+          file.bytes != null) {
+        print('[FileUpload] Creating temporary file for upload...');
+        final tempDir = Directory.systemTemp;
+        final tempFile = File('${tempDir.path}/${file.name}');
+        await tempFile.writeAsBytes(file.bytes!);
+        uploadPath = tempFile.path;
+        print('[FileUpload] Temporary file created: $uploadPath');
+      }
+
+      if (uploadPath == null) {
+        throw Exception('No valid file path or bytes available for upload');
+      }
+
+      await ref
+          .read(uploadViewModelProvider.notifier)
+          .upload(uploadPath, remotePath);
+
       final state = ref.read(uploadViewModelProvider);
       if (state.error != null) {
         setState(() => _error = state.error);
         return;
       }
-      final link = getIt<GenerateLinkUsecase>().fileUrl(folder.replaceFirst(RegExp('^/'), ''), fileName);
+
+      final link = getIt<GenerateLinkUsecase>()
+          .fileUrl(folder.replaceFirst(RegExp('^/'), ''), fileName);
       setState(() => _link = link);
+
+      print('[FileUpload] Upload successful');
+
+      // Show success message
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Upload completed: $fileName'),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
     } catch (e) {
+      print('[FileUpload] Upload failed: $e');
       setState(() => _error = e.toString());
+      _showError('Upload failed: $e');
     }
   }
 
@@ -155,47 +293,96 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
   Widget build(BuildContext context) {
     final upload = ref.watch(uploadViewModelProvider);
     return SingleChildScrollView(
-      child: Column(
+        child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('Client-side Upload', style: Theme.of(context).textTheme.titleLarge),
+        Text('Client-side Upload',
+            style: Theme.of(context).textTheme.titleLarge),
         const SizedBox(height: 12),
-        // Pick area
-        InkWell(
-          onTap: _pickFile,
-          borderRadius: BorderRadius.circular(12),
-          child: Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(vertical: 36),
-            decoration: BoxDecoration(
-              border: Border.all(color: Theme.of(context).colorScheme.primary.withOpacity(0.4), width: 1.5),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (_picked != null && (_picked!.extension?.toLowerCase().contains('png') == true ||
-                    _picked!.extension?.toLowerCase().contains('jpg') == true ||
-                    _picked!.extension?.toLowerCase().contains('jpeg') == true ||
-                    _picked!.extension?.toLowerCase().contains('webp') == true ||
-                    _picked!.extension?.toLowerCase().contains('gif') == true))
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: _picked!.path != null
-                        ? Image.file(
-                            File(_picked!.path!),
-                            height: 120,
-                            fit: BoxFit.cover,
-                          )
-                        : (_picked!.bytes != null
-                            ? Image.memory(_picked!.bytes!, height: 120, fit: BoxFit.cover)
-                            : const Icon(Icons.image, size: 40)),
-                  )
-                else
-                  const Icon(Icons.upload_file, size: 40),
-                const SizedBox(height: 8),
-                Text(_picked == null ? 'Drag n drop or click to select' : _picked!.name),
-              ],
+
+        // Enhanced Pick area with drag & drop support
+        DropTarget(
+          onDragDone: (detail) {
+            print('[FileUpload] Drag done with ${detail.files.length} files');
+            _handleDroppedFiles(detail.files);
+          },
+          onDragEntered: (detail) {
+            print('[FileUpload] Drag entered');
+            setState(() => _isDragging = true);
+          },
+          onDragExited: (detail) {
+            print('[FileUpload] Drag exited');
+            setState(() => _isDragging = false);
+          },
+          child: InkWell(
+            onTap: _pickFile,
+            borderRadius: BorderRadius.circular(12),
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 36),
+              decoration: BoxDecoration(
+                border: Border.all(
+                  color: _isDragging
+                      ? Theme.of(context).colorScheme.primary
+                      : Theme.of(context).colorScheme.primary.withOpacity(0.4),
+                  width: _isDragging ? 2.5 : 1.5,
+                ),
+                borderRadius: BorderRadius.circular(12),
+                color: _isDragging
+                    ? Theme.of(context).colorScheme.primary.withOpacity(0.1)
+                    : null,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (_picked != null &&
+                      (_picked!.extension?.toLowerCase().contains('png') ==
+                              true ||
+                          _picked!.extension?.toLowerCase().contains('jpg') ==
+                              true ||
+                          _picked!.extension?.toLowerCase().contains('jpeg') ==
+                              true ||
+                          _picked!.extension?.toLowerCase().contains('webp') ==
+                              true ||
+                          _picked!.extension?.toLowerCase().contains('gif') ==
+                              true))
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: _picked!.path != null
+                          ? Image.file(
+                              File(_picked!.path!),
+                              height: 120,
+                              fit: BoxFit.cover,
+                            )
+                          : (_picked!.bytes != null
+                              ? Image.memory(_picked!.bytes!,
+                                  height: 120, fit: BoxFit.cover)
+                              : const Icon(Icons.image, size: 40)),
+                    )
+                  else
+                    Icon(
+                      _isDragging ? Icons.file_download : Icons.upload_file,
+                      size: 40,
+                      color: _isDragging
+                          ? Theme.of(context).colorScheme.primary
+                          : null,
+                    ),
+                  const SizedBox(height: 8),
+                  Text(
+                    _isDragging
+                        ? 'Release to add file'
+                        : (_picked == null
+                            ? 'Drag & drop or click to select'
+                            : _picked!.name),
+                    style: TextStyle(
+                      color: _isDragging
+                          ? Theme.of(context).colorScheme.primary
+                          : null,
+                      fontWeight: _isDragging ? FontWeight.w500 : null,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -230,15 +417,17 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
             ),
             IconButton(
               tooltip: 'Refresh',
-              onPressed: _loadingFolders ? null : () => _loadFolders(_folderCtrl.text),
+              onPressed:
+                  _loadingFolders ? null : () => _loadFolders(_folderCtrl.text),
               icon: const Icon(Icons.refresh),
             ),
             IconButton(
-              tooltip: 'Browse…€¦',
+              tooltip: 'Browseâ€¦',
               onPressed: () async {
                 final selected = await showDialog<String>(
                   context: context,
-                  builder: (_) => FolderPickerDialog(initialPath: _folderCtrl.text),
+                  builder: (_) =>
+                      FolderPickerDialog(initialPath: _folderCtrl.text),
                 );
                 if (selected != null && selected.isNotEmpty) {
                   setState(() => _folderCtrl.text = selected);
@@ -292,9 +481,14 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
         ),
         if (upload.uploading) ...[
           const SizedBox(height: 8),
-          LinearProgressIndicator(value: upload.progress == null ? null : upload.progress!.progressPercentage / 100.0),
+          LinearProgressIndicator(
+              value: upload.progress == null
+                  ? null
+                  : upload.progress!.progressPercentage / 100.0),
           const SizedBox(height: 6),
-          Text(upload.progress == null ? 'Starting…€¦' : '${upload.progress!.fileName} â€” ${upload.progress!.progressPercentage.toStringAsFixed(0)}%'),
+          Text(upload.progress == null
+              ? 'Startingâ€¦'
+              : '${upload.progress!.fileName} â€” ${upload.progress!.progressPercentage.toStringAsFixed(0)}%'),
         ],
 
         if (_error != null) ...[
@@ -323,7 +517,3 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
     ));
   }
 }
-
-
-
-
