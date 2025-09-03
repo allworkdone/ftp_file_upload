@@ -76,6 +76,7 @@ dependencies:
   go_router: ^13.2.4
   desktop_drop: ^0.6.1
   cross_file: ^0.3.4+2
+  archive: ^4.0.7
 
 dev_dependencies:
   flutter_test:

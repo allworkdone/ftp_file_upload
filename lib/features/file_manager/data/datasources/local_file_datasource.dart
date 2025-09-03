@@ -32,6 +32,37 @@ class LocalFileDatasourceImpl implements LocalFileDatasource {
         print('[LocalFileDatasource] Size: ${file.size}');
         print('[LocalFileDatasource] Has bytes: ${file.bytes != null}');
 
+        // Basic validation - only reject if it's clearly a directory and not a valid file
+        if (file.path != null) {
+          final fileEntity = File(file.path!);
+
+          // Try to access as a file first
+          try {
+            final exists = await fileEntity.exists();
+            if (exists) {
+              // It's a regular file, proceed normally
+              final actualSize =
+                  file.size > 0 ? file.size : await fileEntity.length();
+              return PlatformFile(
+                name: file.name,
+                size: actualSize,
+                path: file.path,
+                bytes: file.bytes,
+              );
+            }
+          } catch (e) {
+            print('[LocalFileDatasource] Could not access as regular file: $e');
+
+            // Check if it might be a directory (bundle) that was selected
+            final dirEntity = Directory(file.path!);
+            final dirExists = await dirEntity.exists();
+            if (dirExists) {
+              throw Exception(
+                  'Selected item "${file.name}" appears to be a directory/bundle. Please use the bundle selection feature in the upload widget.');
+            }
+          }
+        }
+
         // On macOS, if we have bytes but no accessible path, that's normal due to sandboxing
         if (Platform.isMacOS && file.bytes != null) {
           print(
@@ -44,48 +75,19 @@ class LocalFileDatasourceImpl implements LocalFileDatasource {
           );
         }
 
-        // For other platforms or when we have an accessible path
-        if (file.path != null) {
-          // Verify file accessibility
-          final fileEntity = File(file.path!);
-          final exists = await fileEntity.exists();
-          print('[LocalFileDatasource] File exists: $exists');
-
-          if (exists) {
-            // Get actual file size if not provided
-            final actualSize =
-                file.size > 0 ? file.size : await fileEntity.length();
-            return PlatformFile(
-              name: file.name,
-              size: actualSize,
-              path: file.path,
-              bytes: file.bytes,
-            );
-          } else {
-            print(
-                '[LocalFileDatasource] File path not accessible, trying to read as bytes...');
-            // Try to get bytes if path is not accessible
-            try {
-              final bytes = await fileEntity.readAsBytes();
-              return PlatformFile(
-                name: file.name,
-                size: bytes.length,
-                path: null,
-                bytes: bytes,
-              );
-            } catch (e) {
-              print('[LocalFileDatasource] Could not read file as bytes: $e');
-            }
-          }
+        // If we have bytes but no valid path, use the bytes
+        if (file.bytes != null) {
+          return PlatformFile(
+            name: file.name,
+            size: file.bytes!.length,
+            path: file.path,
+            bytes: file.bytes,
+          );
         }
 
-        // If we reach here, we have a file but no way to access it
-        if (file.bytes == null) {
-          throw Exception(
-              'Selected file is not accessible and no data is available');
-        }
-
-        return file;
+        // If we reach here, we have no way to access the file
+        throw Exception(
+            'Selected file is not accessible and no data is available');
       }
 
       print('[LocalFileDatasource] No file selected');
@@ -98,7 +100,12 @@ class LocalFileDatasourceImpl implements LocalFileDatasource {
             'File access not permitted. Please check macOS privacy settings and app entitlements.');
       }
 
-      rethrow;
+      // Re-throw with more context if it's our custom validation error
+      if (e.toString().contains('appears to be a directory/bundle')) {
+        rethrow;
+      }
+
+      throw Exception('Failed to pick file: ${e.toString()}');
     }
   }
 }
