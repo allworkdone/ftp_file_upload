@@ -49,7 +49,9 @@ class _UploadScreenState extends ConsumerState<UploadScreen> {
           constraints: const BoxConstraints(maxWidth: 720),
           child: Padding(
             padding: const EdgeInsets.all(16),
-            child: FileUploadWidget(folderPath: _folder, onFolderChanged: (p) => setState(() => _folder = p)),
+            child: FileUploadWidget(
+                folderPath: _folder,
+                onFolderChanged: (p) => setState(() => _folder = p)),
           ),
         ),
       ),

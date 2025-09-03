@@ -15,10 +15,10 @@ class LoginScreen extends ConsumerStatefulWidget {
 
 class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _hostController = TextEditingController();
+  final _hostController = TextEditingController(text: '195.26.255.53');
   final _portController = TextEditingController(text: '21');
-  final _userController = TextEditingController();
-  final _passController = TextEditingController();
+  final _userController = TextEditingController(text: 'project@ibartstech.com');
+  final _passController = TextEditingController(text: 'project@apk123@');
   bool _secure = false;
 
   @override
@@ -97,9 +97,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                                 password: _passController.text,
                                 isSecure: _secure,
                               );
-                              final ok = await ref.read(authViewModelProvider.notifier).test(creds);
+                              final ok = await ref
+                                  .read(authViewModelProvider.notifier)
+                                  .test(creds);
                               if (ok) {
-                                await ref.read(authViewModelProvider.notifier).save(creds);
+                                await ref
+                                    .read(authViewModelProvider.notifier)
+                                    .save(creds);
                                 if (!mounted) return;
                                 context.go(RouteNames.fileManager);
                               }
