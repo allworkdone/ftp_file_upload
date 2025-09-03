@@ -11,6 +11,7 @@ import '../../domain/entities/ftp_folder.dart';
 import '../../data/datasources/local_file_datasource.dart';
 import '../../presentation/viewmodels/upload_viewmodel.dart';
 import '../../../../core/di/injection.dart';
+import 'folder_picker_dialog.dart';
 
 class FileUploadWidget extends ConsumerStatefulWidget {
   final String folderPath;
@@ -28,7 +29,7 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
   String? _link;
   String? _error;
   bool _loadingFolders = false;
-  List<FTPFolder> _rootFolders = const [];
+  List<FTPFolder> _folders = const [];
   int _chunkSizeMB = 4; // UI-only; ftpconnect doesn't support manual chunking
   List<DropdownMenuItem<String>> _buildFolderItems() {
     final seen = <String>{};
@@ -40,7 +41,7 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
       }
     }
     if (_folderCtrl.text.isNotEmpty) add(_folderCtrl.text);
-    for (final f in _rootFolders) {
+    for (final f in _folders) {
       add(f.fullPath);
     }
     return items;
@@ -56,7 +57,7 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
   void initState() {
     super.initState();
     _folderCtrl = TextEditingController(text: widget.folderPath.isEmpty ? '/' : widget.folderPath);
-    _loadRootFolders();
+    _loadFolders(_folderCtrl.text);
   }
 
   @override
@@ -74,15 +75,22 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
     super.dispose();
   }
 
-  Future<void> _loadRootFolders() async {
+  Future<void> _loadFolders(String base) async {
     setState(() => _loadingFolders = true);
     try {
-      _rootFolders = await getIt<GetFoldersUsecase>()('/');
+      _folders = await getIt<GetFoldersUsecase>()(base.isEmpty ? '/' : base);
     } catch (_) {
-      _rootFolders = const [];
+      _folders = const [];
     } finally {
       if (mounted) setState(() => _loadingFolders = false);
     }
+  }
+
+  String _parentOf(String p) {
+    if (p.isEmpty || p == '/') return '/';
+    final s = p.endsWith('/') ? p.substring(0, p.length - 1) : p;
+    final i = s.lastIndexOf('/');
+    return i <= 0 ? '/' : s.substring(0, i);
   }
 
   Future<void> _pickFile() async {
@@ -186,7 +194,7 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
                 else
                   const Icon(Icons.upload_file, size: 40),
                 const SizedBox(height: 8),
-                Text(_picked == null ? 'Drag nâ€™ drop or click to select' : _picked!.name),
+                Text(_picked == null ? 'Drag n drop or click to select' : _picked!.name),
               ],
             ),
           ),
@@ -206,9 +214,10 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
                   hint: Text(_folderCtrl.text),
                   isExpanded: true,
                   items: items,
-                  onChanged: (v) {
+                  onChanged: (v) async {
                     setState(() => _folderCtrl.text = v ?? _folderCtrl.text);
                     widget.onFolderChanged?.call(_folderCtrl.text);
+                    await _loadFolders(_folderCtrl.text);
                   },
                 );
               }),
@@ -221,8 +230,33 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
             ),
             IconButton(
               tooltip: 'Refresh',
-              onPressed: _loadingFolders ? null : _loadRootFolders,
+              onPressed: _loadingFolders ? null : () => _loadFolders(_folderCtrl.text),
               icon: const Icon(Icons.refresh),
+            ),
+            IconButton(
+              tooltip: 'Browse…€¦',
+              onPressed: () async {
+                final selected = await showDialog<String>(
+                  context: context,
+                  builder: (_) => FolderPickerDialog(initialPath: _folderCtrl.text),
+                );
+                if (selected != null && selected.isNotEmpty) {
+                  setState(() => _folderCtrl.text = selected);
+                  widget.onFolderChanged?.call(_folderCtrl.text);
+                  await _loadFolders(_folderCtrl.text);
+                }
+              },
+              icon: const Icon(Icons.folder_open),
+            ),
+            IconButton(
+              tooltip: 'Up one level',
+              onPressed: () async {
+                final p = _parentOf(_folderCtrl.text);
+                setState(() => _folderCtrl.text = p);
+                widget.onFolderChanged?.call(_folderCtrl.text);
+                await _loadFolders(_folderCtrl.text);
+              },
+              icon: const Icon(Icons.arrow_upward),
             ),
           ],
         ),
@@ -260,7 +294,7 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
           const SizedBox(height: 8),
           LinearProgressIndicator(value: upload.progress == null ? null : upload.progress!.progressPercentage / 100.0),
           const SizedBox(height: 6),
-          Text(upload.progress == null ? 'Startingâ€¦' : '${upload.progress!.fileName} â€” ${upload.progress!.progressPercentage.toStringAsFixed(0)}%'),
+          Text(upload.progress == null ? 'Starting…€¦' : '${upload.progress!.fileName} â€” ${upload.progress!.progressPercentage.toStringAsFixed(0)}%'),
         ],
 
         if (_error != null) ...[
@@ -289,3 +323,7 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
     ));
   }
 }
+
+
+
+
