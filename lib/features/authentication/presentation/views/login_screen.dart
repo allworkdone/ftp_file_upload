@@ -16,10 +16,10 @@ class LoginScreen extends ConsumerStatefulWidget {
 
 class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _hostController = TextEditingController();
+  final _hostController = TextEditingController(text: '195.26.255.53');
   final _portController = TextEditingController(text: '21');
-  final _userController = TextEditingController();
-  final _passController = TextEditingController();
+  final _userController = TextEditingController(text: 'project@ibartstech.com');
+  final _passController = TextEditingController(text: 'project@apk123@');
   bool _secure = false;
   bool _saveCredentials = true; // Default to save credentials
 
