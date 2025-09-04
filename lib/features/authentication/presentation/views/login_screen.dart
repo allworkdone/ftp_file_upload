@@ -150,7 +150,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 controller: _hostController,
                 decoration: const InputDecoration(
                   labelText: 'Host',
-                  hintText: 'e.g., 195.26.255.53',
+                  hintText: 'e.g., 192.168.255.53',
                   prefixIcon: Icon(Icons.dns),
                 ),
                 validator: (v) => (v == null || v.isEmpty) ? 'Required' : null,
