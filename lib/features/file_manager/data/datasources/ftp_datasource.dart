@@ -140,6 +140,7 @@ class FTPDatasourceImpl implements FTPDatasource {
     }
   }
 
+  @override
   Future<void> deleteFolder(
       FTPCredentials credentials, String remoteFolderPath) async {
     final ftpConnect = FTPConnect(
