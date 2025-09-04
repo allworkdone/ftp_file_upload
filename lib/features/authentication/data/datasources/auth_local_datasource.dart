@@ -7,6 +7,7 @@ import '../models/ftp_credentials_model.dart';
 abstract class AuthLocalDatasource {
   Future<void> saveCredentials(FTPCredentials credentials);
   Future<FTPCredentials?> getCredentials();
+  Future<void> clearCredentials(); // NEW
 }
 
 class AuthLocalDatasourceImpl implements AuthLocalDatasource {
@@ -38,5 +39,11 @@ class AuthLocalDatasourceImpl implements AuthLocalDatasource {
       return FTPCredentialsModel.fromMap(map);
     }
     return null;
+  }
+
+  @override
+  Future<void> clearCredentials() async {
+    final box = await _box();
+    await box.delete(_key);
   }
 }

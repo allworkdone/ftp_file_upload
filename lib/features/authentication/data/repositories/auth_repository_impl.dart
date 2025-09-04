@@ -30,4 +30,7 @@ class AuthRepositoryImpl implements AuthRepository {
     if (!await networkInfo.isConnected) return false;
     return remoteDataSource.testConnection(credentials);
   }
+
+  @override
+  Future<void> clearCredentials() => localDataSource.clearCredentials(); // NEW
 }

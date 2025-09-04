@@ -1,3 +1,4 @@
+// lib/features/file_manager/presentation/widgets/file_upload_widget.dart
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
@@ -37,7 +38,7 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
   List<FTPFolder> _folders = const [];
   int _chunkSizeMB = 4;
   bool _isDragging = false;
-  bool _isProcessingBundle = false; // Track bundle processing
+  bool _isProcessingBundle = false;
 
   List<DropdownMenuItem<String>> _buildFolderItems() {
     final seen = <String>{};
@@ -136,12 +137,11 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
       final stat = await FileStat.stat(filePath);
 
       if (stat.type == FileSystemEntityType.file) {
-        // Regular file - check if it exists and is readable
         final file = File(filePath);
         final exists = await file.exists();
         if (exists) {
           try {
-            await file.length(); // Test if readable
+            await file.length();
             return true;
           } catch (e) {
             print('[FileUpload] File not readable: $filePath - $e');
@@ -150,12 +150,9 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
         }
         return false;
       } else if (stat.type == FileSystemEntityType.directory) {
-        // Directory - check if it's a valid bundle
-        if (_isValidBundle(filePath)) {
-          final dir = Directory(filePath);
-          return await dir.exists();
-        }
-        return false;
+        // Check if it's a valid bundle OR just a regular directory
+        final dir = Directory(filePath);
+        return await dir.exists();
       }
 
       return false;
@@ -165,15 +162,15 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
     }
   }
 
-  // Create zip archive from bundle
-  Future<PlatformFile> _createBundleZip(String bundlePath) async {
+  // Create zip archive from bundle or directory
+  Future<PlatformFile> _createZipFromDirectory(String directoryPath) async {
     setState(() => _isProcessingBundle = true);
 
     try {
-      print('[FileUpload] Creating zip archive for bundle: $bundlePath');
+      print('[FileUpload] Creating zip archive for directory: $directoryPath');
 
-      final bundleName = bundlePath.split('/').last;
-      final zipFileName = '$bundleName.zip';
+      final dirName = directoryPath.split('/').last;
+      final zipFileName = '$dirName.zip';
 
       // Create temporary zip file
       final tempDir = Directory.systemTemp;
@@ -181,13 +178,14 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
 
       // Create archive
       final archive = Archive();
-      final bundleDir = Directory(bundlePath);
+      final directory = Directory(directoryPath);
 
-      // Add all files from bundle to archive
-      await for (final entity in bundleDir.list(recursive: true)) {
+      // Add all files from directory to archive
+      await for (final entity in directory.list(recursive: true)) {
         if (entity is File) {
           try {
-            final relativePath = entity.path.substring(bundlePath.length + 1);
+            final relativePath =
+                entity.path.substring(directoryPath.length + 1);
             final fileBytes = await entity.readAsBytes();
             final archiveFile =
                 ArchiveFile(relativePath, fileBytes.length, fileBytes);
@@ -198,10 +196,9 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
                 '[FileUpload] Failed to add file to archive: ${entity.path} - $e');
           }
         } else if (entity is Directory) {
-          // Add empty directories
           try {
             final relativePath =
-                entity.path.substring(bundlePath.length + 1) + '/';
+                entity.path.substring(directoryPath.length + 1) + '/';
             final archiveFile = ArchiveFile(relativePath, 0, []);
             archive.addFile(archiveFile);
           } catch (e) {
@@ -217,7 +214,6 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
         await zipFile.writeAsBytes(zipData);
         print('[FileUpload] Zip archive created: ${zipFile.path}');
 
-        // Return as PlatformFile
         final fileSize = await zipFile.length();
         return PlatformFile(
           name: zipFileName,
@@ -235,43 +231,65 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
     }
   }
 
+  // FIXED: Single unified file picker method
   Future<void> _pickFileOrBundle() async {
     print('[FileUpload] Starting file/bundle picker...');
 
     try {
-      // Use directory picker for bundles, file picker for regular files
-      final result = await FilePicker.platform.getDirectoryPath();
+      setState(() => _error = null);
 
-      if (result != null) {
-        print('[FileUpload] Directory selected: $result');
+      // Show dialog to let user choose between file and directory
+      final choice = await showDialog<String>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Select Type'),
+          content: const Text('What would you like to select?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, 'cancel'),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, 'file'),
+              child: const Text('File'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, 'directory'),
+              child: const Text('Directory/Bundle'),
+            ),
+          ],
+        ),
+      );
 
-        // Check if it's a valid bundle
-        if (_isValidBundle(result)) {
-          print('[FileUpload] Valid bundle detected: $result');
+      if (choice == null || choice == 'cancel') return;
 
-          // Create zip archive from bundle
-          _picked = await _createBundleZip(result);
+      if (choice == 'directory') {
+        // Directory picker
+        final directoryPath = await FilePicker.platform.getDirectoryPath();
+        if (directoryPath != null) {
+          print('[FileUpload] Directory selected: $directoryPath');
+
+          // Always create zip from directory (whether it's a bundle or not)
+          _picked = await _createZipFromDirectory(directoryPath);
           _fileNameCtrl.text = _picked!.name;
 
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: Text('Bundle converted to zip: ${_picked!.name}'),
+                content: Text('Directory converted to zip: ${_picked!.name}'),
                 backgroundColor: Colors.green,
               ),
             );
           }
-        } else {
-          _showError('Selected directory is not a supported bundle type');
-          return;
         }
       } else {
-        // Try regular file picker
+        // File picker
         final fileResult = await FilePicker.platform.pickFiles(
           allowMultiple: false,
           type: FileType.any,
           withData: Platform.isMacOS,
           withReadStream: false,
+          lockParentWindow: Platform.isMacOS,
         );
 
         if (fileResult != null && fileResult.files.isNotEmpty) {
@@ -280,9 +298,15 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
 
           _picked = file;
           _fileNameCtrl.text = _picked!.name;
-        } else {
-          print('[FileUpload] No file or bundle selected');
-          return;
+
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('File selected: ${_picked!.name}'),
+                backgroundColor: Colors.green,
+              ),
+            );
+          }
         }
       }
 
@@ -309,25 +333,23 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
       print('[FileUpload] Processing dropped file: ${xFile.name}');
       print('[FileUpload] File path: ${xFile.path}');
 
-      // Check if it's a valid file or bundle
+      // Check if it's a valid file or directory
       final isValid = await _isValidFileOrBundle(xFile.path);
       if (!isValid) {
-        _showError(
-            'Dropped item "${xFile.name}" is not a valid file or supported bundle');
+        _showError('Dropped item "${xFile.name}" is not accessible');
         return;
       }
 
-      // Check if it's a bundle that needs zipping
+      // Check if it's a directory
       final stat = await FileStat.stat(xFile.path);
-      if (stat.type == FileSystemEntityType.directory &&
-          _isValidBundle(xFile.path)) {
-        print('[FileUpload] Bundle detected, creating zip...');
-        _picked = await _createBundleZip(xFile.path);
+      if (stat.type == FileSystemEntityType.directory) {
+        print('[FileUpload] Directory detected, creating zip...');
+        _picked = await _createZipFromDirectory(xFile.path);
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Bundle converted to zip: ${_picked!.name}'),
+              content: Text('Directory converted to zip: ${_picked!.name}'),
               backgroundColor: Colors.green,
             ),
           );
@@ -368,6 +390,25 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
           content: Text(message),
           backgroundColor: Colors.red,
           duration: const Duration(seconds: 4),
+        ),
+      );
+    }
+  }
+
+  // NEW: Method to remove selected file
+  void _removeSelectedFile() {
+    setState(() {
+      _picked = null;
+      _fileNameCtrl.clear();
+      _link = null;
+      _error = null;
+    });
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Selected file removed'),
+          backgroundColor: Colors.orange,
         ),
       );
     }
@@ -525,7 +566,7 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
                   if (_isProcessingBundle) ...[
                     const CircularProgressIndicator(),
                     const SizedBox(height: 8),
-                    const Text('Converting bundle to zip...'),
+                    const Text('Converting directory to zip...'),
                   ] else if (_picked != null &&
                       (_picked!.extension?.toLowerCase().contains('png') ==
                               true ||
@@ -562,9 +603,9 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
                     const SizedBox(height: 8),
                     Text(
                       _isDragging
-                          ? 'Release to add file or bundle'
+                          ? 'Release to add file or directory'
                           : (_picked == null
-                              ? 'Drag & drop or click to select files and bundles'
+                              ? 'Drag & drop or click to select files and directories'
                               : _picked!.name),
                       style: TextStyle(
                         color: _isDragging
@@ -577,7 +618,7 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
                       Padding(
                         padding: const EdgeInsets.only(top: 4),
                         child: Text(
-                          '(.xcarchive bundles will be automatically zipped)',
+                          '(Directories will be automatically zipped)',
                           style: TextStyle(
                             fontSize: 12,
                             color: Theme.of(context)
@@ -593,6 +634,22 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
             ),
           ),
         ),
+
+        // NEW: Remove selected file button
+        if (_picked != null) ...[
+          const SizedBox(height: 8),
+          Center(
+            child: TextButton.icon(
+              onPressed: _removeSelectedFile,
+              icon: const Icon(Icons.clear, size: 18),
+              label: const Text('Remove selected file'),
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.red,
+              ),
+            ),
+          ),
+        ],
+
         const SizedBox(height: 16),
 
         // Remote folder selector
@@ -675,7 +732,7 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
           controller: _fileNameCtrl,
           decoration: const InputDecoration(
             labelText: 'Custom filename',
-            helperText: 'Bundles will be automatically renamed to .zip',
+            helperText: 'Directories will be automatically renamed to .zip',
           ),
         ),
 

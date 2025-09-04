@@ -4,4 +4,5 @@ abstract class AuthRepository {
   Future<void> saveCredentials(FTPCredentials credentials);
   Future<FTPCredentials?> getCredentials();
   Future<bool> testConnection(FTPCredentials credentials);
+  Future<void> clearCredentials();
 }
