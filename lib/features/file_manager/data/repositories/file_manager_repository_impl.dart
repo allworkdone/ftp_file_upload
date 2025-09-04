@@ -144,4 +144,10 @@ class FileManagerRepositoryImpl implements FileManagerRepository {
     if (creds == null) throw Exception('No credentials');
     await ftpDatasource.deleteFile(creds, remoteFilePath);
   }
+
+  @override
+  Future<void> deleteFolder(String remoteFolderPath) {
+    // TODO: implement deleteFolder
+    throw UnimplementedError();
+  }
 }
