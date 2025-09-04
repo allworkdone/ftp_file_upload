@@ -1,4 +1,9 @@
-import 'package:file_upload/features/file_manager/domain/usecases/download_file_usercase.dart';
+import 'dart:io';
+import 'dart:typed_data';
+import 'package:file_saver/file_saver.dart';
+import 'package:path/path.dart' as path;
+
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:path_provider/path_provider.dart';
@@ -151,81 +156,92 @@ class _FolderBrowserScreenState extends State<FolderBrowserScreen> {
 
   Future<void> _downloadFile(FTPFile file) async {
     try {
-      // Request storage permission
-      final status = await Permission.storage.request();
-      if (!status.isGranted) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Storage permission is required to download files'),
-              backgroundColor: Colors.orange,
-            ),
-          );
-        }
-        return;
-      }
-
-      // Get download directory
-      final directory = await getExternalStorageDirectory();
-      if (directory == null) {
-        throw Exception('Unable to access storage directory');
-      }
-
-      // Show downloading indicator
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Row(
               children: [
-                const SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: Colors.white,
-                  ),
-                ),
+                const CircularProgressIndicator(),
                 const SizedBox(width: 12),
                 Text('Downloading "${file.name}"...'),
               ],
             ),
-            duration: const Duration(seconds: 10),
           ),
         );
       }
 
-      final localPath = await getIt<DownloadFileUsecase>()(
-        file.fullPath,
-        directory.path,
+      final dio = Dio();
+      final fileUrl = 'https://project.ibartstech.com${file.fullPath}';
+
+      // Download as bytes first
+      final response = await dio.get(
+        fileUrl,
+        options: Options(responseType: ResponseType.bytes),
       );
 
-      if (mounted) {
-        ScaffoldMessenger.of(context).hideCurrentSnackBar();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('File downloaded successfully to: $localPath'),
-            backgroundColor: Colors.green,
-            action: SnackBarAction(
-              label: 'Open Folder',
-              textColor: Colors.white,
-              onPressed: () {
-                // You can implement opening file manager here
-                // or use a plugin like open_file
-              },
-            ),
-          ),
+      if (response.statusCode == 200) {
+        final bytes = response.data as List<int>;
+
+        // Use FileSaver to save the file
+        final result = await FileSaver.instance.saveFile(
+          name: file.name,
+          bytes: Uint8List.fromList(bytes),
+          fileExtension: file.extension ?? '',
+          mimeType: _getMimeType(file.extension),
         );
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).hideCurrentSnackBar();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('File downloaded successfully!'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      } else {
+        throw Exception('Failed to download file: ${response.statusCode}');
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).hideCurrentSnackBar();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Failed to download file: $e'),
+            content: Text('Failed to download file: ${e.toString()}'),
             backgroundColor: Colors.red,
           ),
         );
       }
+    }
+  }
+
+  MimeType _getMimeType(String? extension) {
+    if (extension == null) return MimeType.other;
+
+    switch (extension.toLowerCase()) {
+      case 'jpg':
+      case 'jpeg':
+        return MimeType.jpeg;
+      case 'png':
+        return MimeType.png;
+      case 'gif':
+        return MimeType.gif;
+      case 'pdf':
+        return MimeType.pdf;
+      case 'doc':
+      case 'docx':
+        return MimeType.openDocText;
+      case 'xls':
+      case 'xlsx':
+        return MimeType.openDocSheets;
+      case 'zip':
+        return MimeType.zip;
+      case 'mp3':
+        return MimeType.mp3;
+      case 'mp4':
+        return MimeType.mp4Video;
+      default:
+        return MimeType.other;
     }
   }
 
