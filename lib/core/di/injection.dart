@@ -1,4 +1,6 @@
 import 'package:file_upload/features/authentication/domain/usecases/clear_credentials_usecase.dart';
+import 'package:file_upload/features/file_manager/domain/usecases/delete_folder_usecase.dart';
+import 'package:file_upload/features/file_manager/domain/usecases/download_file_usercase.dart';
 import 'package:get_it/get_it.dart';
 import 'package:injectable/injectable.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -196,6 +198,14 @@ Future<void> configureDependencies() async {
 
   getIt.registerLazySingleton<ClearCredentialsUsecase>(
     () => ClearCredentialsUsecase(getIt<AuthRepository>()),
+  );
+
+  getIt.registerLazySingleton<DeleteFolderUsecase>(
+    () => DeleteFolderUsecase(getIt<FileManagerRepository>()),
+  );
+
+  getIt.registerLazySingleton<DownloadFileUsecase>(
+    () => DownloadFileUsecase(getIt<FileManagerRepository>()),
   );
 
   AppLogger.info('Dependency injection setup completed');

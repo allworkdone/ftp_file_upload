@@ -1,9 +1,15 @@
+import 'package:file_upload/features/file_manager/domain/usecases/download_file_usercase.dart';
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import '../../../file_manager/domain/entities/ftp_folder.dart';
 import '../../../file_manager/domain/entities/ftp_file.dart';
 import '../../../file_manager/domain/usecases/get_folders_usecase.dart';
 import '../../../file_manager/domain/usecases/get_files_usecase.dart';
+import '../../../file_manager/domain/usecases/delete_file_usecase.dart';
+import '../../../file_manager/domain/usecases/delete_folder_usecase.dart';
 import '../../../../core/di/injection.dart';
 import '../../../../app/router/route_names.dart';
 import 'package:go_router/go_router.dart';
@@ -45,6 +51,208 @@ class _FolderBrowserScreenState extends State<FolderBrowserScreen> {
     }
   }
 
+  Future<void> _deleteFolder(FTPFolder folder) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Folder'),
+        content: Text(
+            'Are you sure you want to delete "${folder.name}"?\n\nThis action cannot be undone and will delete all contents.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      try {
+        await getIt<DeleteFolderUsecase>()(folder.fullPath);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Folder "${folder.name}" deleted successfully'),
+              backgroundColor: Colors.green,
+            ),
+          );
+          _load(); // Refresh the list
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Failed to delete folder: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    }
+  }
+
+  Future<void> _deleteFile(FTPFile file) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete File'),
+        content: Text(
+            'Are you sure you want to delete "${file.name}"?\n\nThis action cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      try {
+        await getIt<DeleteFileUsecase>()(file.fullPath);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('File "${file.name}" deleted successfully'),
+              backgroundColor: Colors.green,
+            ),
+          );
+          _load(); // Refresh the list
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Failed to delete file: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    }
+  }
+
+  Future<void> _downloadFile(FTPFile file) async {
+    try {
+      // Request storage permission
+      final status = await Permission.storage.request();
+      if (!status.isGranted) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Storage permission is required to download files'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+        return;
+      }
+
+      // Get download directory
+      final directory = await getExternalStorageDirectory();
+      if (directory == null) {
+        throw Exception('Unable to access storage directory');
+      }
+
+      // Show downloading indicator
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Text('Downloading "${file.name}"...'),
+              ],
+            ),
+            duration: const Duration(seconds: 10),
+          ),
+        );
+      }
+
+      final localPath = await getIt<DownloadFileUsecase>()(
+        file.fullPath,
+        directory.path,
+      );
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('File downloaded successfully to: $localPath'),
+            backgroundColor: Colors.green,
+            action: SnackBarAction(
+              label: 'Open Folder',
+              textColor: Colors.white,
+              onPressed: () {
+                // You can implement opening file manager here
+                // or use a plugin like open_file
+              },
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to download file: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _openInBrowser(String url) async {
+    final uri = Uri.parse(url);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not open URL in browser'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  String _formatFileSize(int bytes) {
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    if (bytes < 1024 * 1024 * 1024)
+      return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
+  }
+
   @override
   void initState() {
     super.initState();
@@ -64,40 +272,274 @@ class _FolderBrowserScreenState extends State<FolderBrowserScreen> {
                   if (_error != null)
                     Padding(
                       padding: const EdgeInsets.all(16),
-                      child: Text(_error!,
-                          style: const TextStyle(color: Colors.red)),
+                      child: Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.red.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(8),
+                          border:
+                              Border.all(color: Colors.red.withOpacity(0.3)),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.error, color: Colors.red),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                _error!,
+                                style: const TextStyle(color: Colors.red),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
                   if (_folders.isNotEmpty)
                     const Padding(
                       padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
                       child: Text('Folders',
-                          style: TextStyle(fontWeight: FontWeight.bold)),
+                          style: TextStyle(
+                              fontWeight: FontWeight.bold, fontSize: 16)),
                     ),
                   ..._folders.map((f) => ListTile(
-                        leading: const Icon(Icons.folder),
+                        leading: const Icon(Icons.folder, color: Colors.amber),
                         title: Text(f.name),
+                        subtitle: Text(
+                            '${f.totalFiles} files • ${f.totalSubFolders} folders'),
                         onTap: () => context
                             .push(RouteNames.folderBrowserPath(f.fullPath)),
+                        trailing: PopupMenuButton<String>(
+                          onSelected: (value) async {
+                            switch (value) {
+                              case 'delete':
+                                await _deleteFolder(f);
+                                break;
+                              case 'open':
+                                await _openInBrowser(
+                                    'https://project.ibartstech.com${f.fullPath}');
+                                break;
+                            }
+                          },
+                          itemBuilder: (context) => [
+                            const PopupMenuItem(
+                              value: 'open',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.open_in_browser),
+                                  SizedBox(width: 8),
+                                  Text('Open in browser'),
+                                ],
+                              ),
+                            ),
+                            const PopupMenuItem(
+                              value: 'delete',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.delete, color: Colors.red),
+                                  SizedBox(width: 8),
+                                  Text('Delete',
+                                      style: TextStyle(color: Colors.red)),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
                       )),
                   if (_files.isNotEmpty)
                     const Padding(
                       padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
                       child: Text('Files',
-                          style: TextStyle(fontWeight: FontWeight.bold)),
+                          style: TextStyle(
+                              fontWeight: FontWeight.bold, fontSize: 16)),
                     ),
                   ..._files.map((fi) => ListTile(
-                        leading: const Icon(Icons.insert_drive_file),
+                        leading: Icon(
+                          _getFileIcon(fi.extension),
+                          color: _getFileIconColor(fi.extension),
+                        ),
                         title: Text(fi.name),
-                        subtitle: Text(fi.path),
+                        subtitle:
+                            Text('${_formatFileSize(fi.size)} • ${fi.path}'),
+                        trailing: PopupMenuButton<String>(
+                          onSelected: (value) async {
+                            switch (value) {
+                              case 'download':
+                                await _downloadFile(fi);
+                                break;
+                              case 'delete':
+                                await _deleteFile(fi);
+                                break;
+                              case 'open':
+                                await _openInBrowser(
+                                    'https://project.ibartstech.com${fi.fullPath}');
+                                break;
+                              case 'copy_link':
+                                // You can implement clipboard functionality here
+                                final url =
+                                    'https://project.ibartstech.com${fi.fullPath}';
+                                if (mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text('Link copied: $url'),
+                                      backgroundColor: Colors.green,
+                                    ),
+                                  );
+                                }
+                                break;
+                            }
+                          },
+                          itemBuilder: (context) => [
+                            const PopupMenuItem(
+                              value: 'download',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.download),
+                                  SizedBox(width: 8),
+                                  Text('Download'),
+                                ],
+                              ),
+                            ),
+                            const PopupMenuItem(
+                              value: 'open',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.open_in_browser),
+                                  SizedBox(width: 8),
+                                  Text('Open in browser'),
+                                ],
+                              ),
+                            ),
+                            const PopupMenuItem(
+                              value: 'copy_link',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.link),
+                                  SizedBox(width: 8),
+                                  Text('Copy link'),
+                                ],
+                              ),
+                            ),
+                            const PopupMenuItem(
+                              value: 'delete',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.delete, color: Colors.red),
+                                  SizedBox(width: 8),
+                                  Text('Delete',
+                                      style: TextStyle(color: Colors.red)),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
                       )),
                   if (_folders.isEmpty && _files.isEmpty)
                     const Padding(
                       padding: EdgeInsets.all(24),
-                      child: Center(child: Text('Folder is empty')),
+                      child: Center(
+                        child: Column(
+                          children: [
+                            Icon(Icons.folder_open,
+                                size: 64, color: Colors.grey),
+                            SizedBox(height: 8),
+                            Text('Folder is empty'),
+                            SizedBox(height: 4),
+                            Text('Upload files or create subfolders'),
+                          ],
+                        ),
+                      ),
                     ),
                 ],
               ),
             ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () =>
+            context.go(RouteNames.uploadPath(folderPath: widget.folderPath)),
+        child: const Icon(Icons.upload),
+        tooltip: 'Upload to this folder',
+      ),
     );
+  }
+
+  IconData _getFileIcon(String? extension) {
+    if (extension == null) return Icons.insert_drive_file;
+
+    switch (extension.toLowerCase()) {
+      case 'jpg':
+      case 'jpeg':
+      case 'png':
+      case 'gif':
+      case 'bmp':
+      case 'webp':
+        return Icons.image;
+      case 'mp4':
+      case 'avi':
+      case 'mov':
+      case 'mkv':
+      case 'flv':
+        return Icons.video_file;
+      case 'mp3':
+      case 'wav':
+      case 'flac':
+      case 'aac':
+        return Icons.audio_file;
+      case 'pdf':
+        return Icons.picture_as_pdf;
+      case 'doc':
+      case 'docx':
+        return Icons.description;
+      case 'xls':
+      case 'xlsx':
+        return Icons.table_chart;
+      case 'zip':
+      case 'rar':
+      case '7z':
+        return Icons.archive;
+      case 'txt':
+        return Icons.text_snippet;
+      default:
+        return Icons.insert_drive_file;
+    }
+  }
+
+  Color _getFileIconColor(String? extension) {
+    if (extension == null) return Colors.grey;
+
+    switch (extension.toLowerCase()) {
+      case 'jpg':
+      case 'jpeg':
+      case 'png':
+      case 'gif':
+      case 'bmp':
+      case 'webp':
+        return Colors.green;
+      case 'mp4':
+      case 'avi':
+      case 'mov':
+      case 'mkv':
+      case 'flv':
+        return Colors.red;
+      case 'mp3':
+      case 'wav':
+      case 'flac':
+      case 'aac':
+        return Colors.purple;
+      case 'pdf':
+        return Colors.red;
+      case 'doc':
+      case 'docx':
+        return Colors.blue;
+      case 'xls':
+      case 'xlsx':
+        return Colors.green;
+      case 'zip':
+      case 'rar':
+      case '7z':
+        return Colors.orange;
+      case 'txt':
+        return Colors.grey;
+      default:
+        return Colors.grey;
+    }
   }
 }

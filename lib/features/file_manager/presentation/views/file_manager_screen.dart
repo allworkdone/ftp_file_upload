@@ -6,6 +6,8 @@ import '../../../../app/router/route_names.dart';
 
 import '../viewmodels/file_manager_viewmodel.dart';
 import '../../../authentication/presentation/viewmodels/auth_viewmodel.dart';
+import '../../domain/usecases/delete_folder_usecase.dart';
+import '../../../../core/di/injection.dart';
 
 class FileManagerScreen extends ConsumerWidget {
   const FileManagerScreen({super.key});
@@ -306,7 +308,7 @@ class FileManagerScreen extends ConsumerWidget {
       builder: (context) => AlertDialog(
         title: const Text('Delete Folder'),
         content: Text(
-            'Are you sure you want to delete "$folderName"?\n\nThis action cannot be undone.'),
+            'Are you sure you want to delete "$folderName"?\n\nThis action cannot be undone and will delete all contents.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -326,14 +328,18 @@ class FileManagerScreen extends ConsumerWidget {
 
     if (confirmed == true) {
       try {
-        // You'll need to implement delete folder functionality in your repository
+        await getIt<DeleteFolderUsecase>()(folderPath);
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Folder deletion not yet implemented'),
-              backgroundColor: Colors.orange,
+            SnackBar(
+              content: Text('Folder "$folderName" deleted successfully'),
+              backgroundColor: Colors.green,
             ),
           );
+          // Refresh the current view
+          ref
+              .read(fileManagerViewModelProvider.notifier)
+              .refresh(ref.read(fileManagerViewModelProvider).currentPath);
         }
       } catch (e) {
         if (context.mounted) {

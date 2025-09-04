@@ -9,4 +9,5 @@ abstract class FileManagerRepository {
   Stream<UploadProgress> uploadFile(String localPath, String remotePath);
   Future<void> deleteFile(String remoteFilePath);
   Future<void> deleteFolder(String remoteFolderPath);
+  Future<String> downloadFile(String remoteFilePath, String localDirectoryPath);
 }

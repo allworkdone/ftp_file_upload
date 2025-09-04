@@ -146,8 +146,23 @@ class FileManagerRepositoryImpl implements FileManagerRepository {
   }
 
   @override
-  Future<void> deleteFolder(String remoteFolderPath) {
-    // TODO: implement deleteFolder
-    throw UnimplementedError();
+  Future<void> deleteFolder(String remoteFolderPath) async {
+    final creds = await _creds();
+    if (creds == null) throw Exception('No credentials');
+    await ftpDatasource.deleteFolder(creds, remoteFolderPath);
+  }
+
+  @override
+  Future<String> downloadFile(
+      String remoteFilePath, String localDirectoryPath) async {
+    final creds = await _creds();
+    if (creds == null) throw Exception('No credentials');
+
+    if (!await networkInfo.isConnected) {
+      throw Exception('No internet connection');
+    }
+
+    return await ftpDatasource.downloadFile(
+        creds, remoteFilePath, localDirectoryPath);
   }
 }

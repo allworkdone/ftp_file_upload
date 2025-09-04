@@ -17,6 +17,10 @@ abstract class FTPDatasource {
     dynamic onProgress,
   });
   Future<void> deleteFile(FTPCredentials creds, String remotePath);
+  Future<void> deleteFolder(
+      FTPCredentials credentials, String remoteFolderPath);
+  Future<String> downloadFile(FTPCredentials credentials, String remoteFilePath,
+      String localDirectoryPath);
 }
 
 class FTPDatasourceImpl implements FTPDatasource {
@@ -134,5 +138,118 @@ class FTPDatasourceImpl implements FTPDatasource {
     } finally {
       await ftp.disconnect();
     }
+  }
+
+  Future<void> deleteFolder(
+      FTPCredentials credentials, String remoteFolderPath) async {
+    final ftpConnect = FTPConnect(
+      credentials.hostname,
+      user: credentials.username,
+      pass: credentials.password,
+      port: credentials.port,
+    );
+
+    try {
+      await ftpConnect.connect();
+
+      // First, try to list contents of the folder to delete files/subfolders recursively
+      try {
+        final contents = await ftpConnect.listDirectoryContent();
+
+        for (final item in contents) {
+          final itemPath = remoteFolderPath.endsWith('/')
+              ? '$remoteFolderPath${item.name}'
+              : '$remoteFolderPath/${item.name}';
+
+          if (item.type == FTPEntryType.DIR) {
+            // Recursively delete subdirectory
+            await deleteFolder(credentials, itemPath);
+          } else {
+            // Delete file
+            await ftpConnect.deleteFile(itemPath);
+          }
+        }
+      } catch (e) {
+        // If listing fails, the folder might be empty or inaccessible
+        print('Could not list folder contents: $e');
+      }
+
+      // Finally, delete the empty folder
+      await ftpConnect.deleteDirectory(remoteFolderPath);
+    } catch (e) {
+      throw Exception('Failed to delete folder: $e');
+    } finally {
+      try {
+        await ftpConnect.disconnect();
+      } catch (e) {
+        print('Error disconnecting: $e');
+      }
+    }
+  }
+
+  @override
+  Future<String> downloadFile(FTPCredentials credentials, String remoteFilePath,
+      String localDirectoryPath) async {
+    final ftpConnect = FTPConnect(
+      credentials.hostname,
+      user: credentials.username,
+      pass: credentials.password,
+      port: credentials.port,
+    );
+
+    try {
+      await ftpConnect.connect();
+
+      // Extract filename from remote path
+      final fileName = remoteFilePath.split('/').last;
+      final localFilePath = '$localDirectoryPath/$fileName';
+
+      // Create local file
+      final localFile = File(localFilePath);
+
+      // Ensure parent directory exists
+      await localFile.parent.create(recursive: true);
+
+      // Download the file
+      final downloaded =
+          await ftpConnect.downloadFile(remoteFilePath, localFile);
+
+      if (!downloaded) {
+        throw Exception('Failed to download file');
+      }
+
+      return localFilePath;
+    } catch (e) {
+      throw Exception('Failed to download file: $e');
+    } finally {
+      try {
+        await ftpConnect.disconnect();
+      } catch (e) {
+        print('Error disconnecting: $e');
+      }
+    }
+  }
+
+  Future<String> downloadFileWithRetry(FTPCredentials credentials,
+      String remoteFilePath, String localDirectoryPath,
+      {int maxRetries = 3}) async {
+    Exception? lastException;
+
+    for (int attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        return await downloadFile(
+            credentials, remoteFilePath, localDirectoryPath);
+      } catch (e) {
+        lastException = e is Exception ? e : Exception(e.toString());
+        if (attempt < maxRetries) {
+          // Wait before retry (exponential backoff)
+          await Future.delayed(Duration(seconds: attempt * 2));
+          continue;
+        }
+      }
+    }
+
+    throw lastException ??
+        Exception('Download failed after $maxRetries attempts');
   }
 }
