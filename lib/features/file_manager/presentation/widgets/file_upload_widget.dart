@@ -231,89 +231,72 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
     }
   }
 
-  // FIXED: Single unified file picker method
-  Future<void> _pickFileOrBundle() async {
-    print('[FileUpload] Starting file/bundle picker...');
+  // FIXED: Direct file picker without confusing dialog
+  Future<void> _pickFile() async {
+    print('[FileUpload] Starting direct file picker...');
 
     try {
       setState(() => _error = null);
 
-      // Show dialog to let user choose between file and directory
-      final choice = await showDialog<String>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('Select Type'),
-          content: const Text('What would you like to select?'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, 'cancel'),
-              child: const Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(context, 'file'),
-              child: const Text('File'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(context, 'directory'),
-              child: const Text('Directory/Bundle'),
-            ),
-          ],
-        ),
+      final fileResult = await FilePicker.platform.pickFiles(
+        allowMultiple: false,
+        type: FileType.any,
+        withData: Platform.isMacOS,
+        withReadStream: false,
+        lockParentWindow: Platform.isMacOS,
       );
 
-      if (choice == null || choice == 'cancel') return;
+      if (fileResult != null && fileResult.files.isNotEmpty) {
+        final file = fileResult.files.single;
+        print('[FileUpload] File picked: ${file.name}');
 
-      if (choice == 'directory') {
-        // Directory picker
-        final directoryPath = await FilePicker.platform.getDirectoryPath();
-        if (directoryPath != null) {
-          print('[FileUpload] Directory selected: $directoryPath');
+        _picked = file;
+        _fileNameCtrl.text = _picked!.name;
 
-          // Always create zip from directory (whether it's a bundle or not)
-          _picked = await _createZipFromDirectory(directoryPath);
-          _fileNameCtrl.text = _picked!.name;
-
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text('Directory converted to zip: ${_picked!.name}'),
-                backgroundColor: Colors.green,
-              ),
-            );
-          }
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('File selected: ${_picked!.name}'),
+              backgroundColor: Colors.green,
+            ),
+          );
         }
-      } else {
-        // File picker
-        final fileResult = await FilePicker.platform.pickFiles(
-          allowMultiple: false,
-          type: FileType.any,
-          withData: Platform.isMacOS,
-          withReadStream: false,
-          lockParentWindow: Platform.isMacOS,
-        );
-
-        if (fileResult != null && fileResult.files.isNotEmpty) {
-          final file = fileResult.files.single;
-          print('[FileUpload] File picked: ${file.name}');
-
-          _picked = file;
-          _fileNameCtrl.text = _picked!.name;
-
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text('File selected: ${_picked!.name}'),
-                backgroundColor: Colors.green,
-              ),
-            );
-          }
-        }
+        setState(() {});
       }
-
-      setState(() {});
     } catch (e) {
-      print('[FileUpload] Error picking file/bundle: $e');
-      _showError('Failed to select file or bundle: $e');
+      print('[FileUpload] Error picking file: $e');
+      _showError('Failed to select file: $e');
+    }
+  }
+
+  // NEW: Separate directory picker
+  Future<void> _pickDirectory() async {
+    print('[FileUpload] Starting directory picker...');
+
+    try {
+      setState(() => _error = null);
+
+      final directoryPath = await FilePicker.platform.getDirectoryPath();
+      if (directoryPath != null) {
+        print('[FileUpload] Directory selected: $directoryPath');
+
+        // Always create zip from directory (whether it's a bundle or not)
+        _picked = await _createZipFromDirectory(directoryPath);
+        _fileNameCtrl.text = _picked!.name;
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Directory converted to zip: ${_picked!.name}'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+        setState(() {});
+      }
+    } catch (e) {
+      print('[FileUpload] Error picking directory: $e');
+      _showError('Failed to select directory: $e');
     }
   }
 
@@ -395,7 +378,7 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
     }
   }
 
-  // NEW: Method to remove selected file
+  // Method to remove selected file
   void _removeSelectedFile() {
     setState(() {
       _picked = null;
@@ -542,100 +525,114 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
             print('[FileUpload] Drag exited');
             setState(() => _isDragging = false);
           },
-          child: InkWell(
-            onTap: _isProcessingBundle ? null : _pickFileOrBundle,
-            borderRadius: BorderRadius.circular(12),
-            child: Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 36),
-              decoration: BoxDecoration(
-                border: Border.all(
-                  color: _isDragging
-                      ? Theme.of(context).colorScheme.primary
-                      : Theme.of(context).colorScheme.primary.withOpacity(0.4),
-                  width: _isDragging ? 2.5 : 1.5,
-                ),
-                borderRadius: BorderRadius.circular(12),
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(vertical: 24),
+            decoration: BoxDecoration(
+              border: Border.all(
                 color: _isDragging
-                    ? Theme.of(context).colorScheme.primary.withOpacity(0.1)
-                    : null,
+                    ? Theme.of(context).colorScheme.primary
+                    : Theme.of(context).colorScheme.primary.withOpacity(0.4),
+                width: _isDragging ? 2.5 : 1.5,
               ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (_isProcessingBundle) ...[
-                    const CircularProgressIndicator(),
-                    const SizedBox(height: 8),
-                    const Text('Converting directory to zip...'),
-                  ] else if (_picked != null &&
-                      (_picked!.extension?.toLowerCase().contains('png') ==
-                              true ||
-                          _picked!.extension?.toLowerCase().contains('jpg') ==
-                              true ||
-                          _picked!.extension?.toLowerCase().contains('jpeg') ==
-                              true ||
-                          _picked!.extension?.toLowerCase().contains('webp') ==
-                              true ||
-                          _picked!.extension?.toLowerCase().contains('gif') ==
-                              true))
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: _picked!.path != null
-                          ? Image.file(
-                              File(_picked!.path!),
-                              height: 120,
-                              fit: BoxFit.cover,
-                            )
-                          : (_picked!.bytes != null
-                              ? Image.memory(_picked!.bytes!,
-                                  height: 120, fit: BoxFit.cover)
-                              : const Icon(Icons.image, size: 40)),
-                    )
-                  else
-                    Icon(
-                      _isDragging ? Icons.file_download : Icons.upload_file,
-                      size: 40,
+              borderRadius: BorderRadius.circular(12),
+              color: _isDragging
+                  ? Theme.of(context).colorScheme.primary.withOpacity(0.1)
+                  : null,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (_isProcessingBundle) ...[
+                  const CircularProgressIndicator(),
+                  const SizedBox(height: 8),
+                  const Text('Converting directory to zip...'),
+                ] else if (_picked != null &&
+                    (_picked!.extension?.toLowerCase().contains('png') ==
+                            true ||
+                        _picked!.extension?.toLowerCase().contains('jpg') ==
+                            true ||
+                        _picked!.extension?.toLowerCase().contains('jpeg') ==
+                            true ||
+                        _picked!.extension?.toLowerCase().contains('webp') ==
+                            true ||
+                        _picked!.extension?.toLowerCase().contains('gif') ==
+                            true))
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: _picked!.path != null
+                        ? Image.file(
+                            File(_picked!.path!),
+                            height: 120,
+                            fit: BoxFit.cover,
+                          )
+                        : (_picked!.bytes != null
+                            ? Image.memory(_picked!.bytes!,
+                                height: 120, fit: BoxFit.cover)
+                            : const Icon(Icons.image, size: 40)),
+                  )
+                else
+                  Icon(
+                    _isDragging ? Icons.file_download : Icons.upload_file,
+                    size: 40,
+                    color: _isDragging
+                        ? Theme.of(context).colorScheme.primary
+                        : null,
+                  ),
+                if (!_isProcessingBundle) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    _isDragging
+                        ? 'Release to add file or directory'
+                        : (_picked == null
+                            ? 'Drag & drop files/directories here'
+                            : _picked!.name),
+                    style: TextStyle(
                       color: _isDragging
                           ? Theme.of(context).colorScheme.primary
                           : null,
+                      fontWeight: _isDragging ? FontWeight.w500 : null,
                     ),
-                  if (!_isProcessingBundle) ...[
-                    const SizedBox(height: 8),
-                    Text(
-                      _isDragging
-                          ? 'Release to add file or directory'
-                          : (_picked == null
-                              ? 'Drag & drop or click to select files and directories'
-                              : _picked!.name),
-                      style: TextStyle(
-                        color: _isDragging
-                            ? Theme.of(context).colorScheme.primary
-                            : null,
-                        fontWeight: _isDragging ? FontWeight.w500 : null,
+                  ),
+                  const SizedBox(height: 12),
+                  // NEW: Separate buttons for file and directory selection
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      ElevatedButton.icon(
+                        onPressed: _isProcessingBundle ? null : _pickFile,
+                        icon: const Icon(Icons.insert_drive_file, size: 18),
+                        label: const Text('Select File'),
                       ),
-                    ),
-                    if (_isDragging)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 4),
-                        child: Text(
-                          '(Directories will be automatically zipped)',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Theme.of(context)
-                                .colorScheme
-                                .onSurface
-                                .withOpacity(0.6),
-                          ),
+                      const SizedBox(width: 12),
+                      ElevatedButton.icon(
+                        onPressed: _isProcessingBundle ? null : _pickDirectory,
+                        icon: const Icon(Icons.folder, size: 18),
+                        label: const Text('Select Directory'),
+                      ),
+                    ],
+                  ),
+                  if (_isDragging)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Text(
+                        '(Directories will be automatically zipped)',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Theme.of(context)
+                              .colorScheme
+                              .onSurface
+                              .withOpacity(0.6),
                         ),
                       ),
-                  ],
+                    ),
                 ],
-              ),
+              ],
             ),
           ),
         ),
 
-        // NEW: Remove selected file button
+        // Remove selected file button
         if (_picked != null) ...[
           const SizedBox(height: 8),
           Center(
