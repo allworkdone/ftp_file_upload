@@ -64,10 +64,18 @@ class AuthViewModel extends StateNotifier<AuthState> {
 
   Future<bool> test(FTPCredentials credentials) async {
     state = state.copyWith(testing: true, error: null);
-    final ok = await _testConnection(credentials);
-    state = state.copyWith(
-        testing: false, connected: ok, error: ok ? null : 'Connection failed');
-    return ok;
+    try {
+      final ok = await _testConnection(credentials);
+      state = state.copyWith(
+          testing: false,
+          connected: ok,
+          error: ok ? null : 'Connection failed');
+      return ok;
+    } catch (e) {
+      state = state.copyWith(
+          testing: false, error: 'An error occurred: ${e.toString()}');
+      return false;
+    }
   }
 
   // NEW: Clear saved credentials
