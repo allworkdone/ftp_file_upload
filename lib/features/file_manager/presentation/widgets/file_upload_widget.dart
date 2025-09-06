@@ -396,7 +396,7 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
           mainAxisSize: MainAxisSize.min,
           children: [
             if (_isProcessingBundle) ...[
-              CircularProgressIndicator(color: AppColors.primaryLight),
+              CircularProgressIndicator(color: AppColors.primaryLight, year2023: false,),
               const SizedBox(height: 16),
               const Text('Converting directory to zip...',
                   style: TextStyle(color: Colors.white70)),
@@ -718,6 +718,7 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
             if (upload.uploading) ...[
               const SizedBox(height: 20),
               LinearProgressIndicator(
+                year2023: false,
                 value: upload.progress?.progressPercentage != null
                     ? upload.progress!.progressPercentage / 100.0
                     : null,
@@ -725,6 +726,9 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
                 color: AppColors.primaryLight,
                 minHeight: 6,
                 borderRadius: BorderRadius.circular(3),
+                valueColor: AlwaysStoppedAnimation<Color>(
+                  Theme.of(context).colorScheme.primary, // M3 primary color
+                ),
               ),
               const SizedBox(height: 12),
               Text(

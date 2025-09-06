@@ -161,7 +161,7 @@ class _FolderBrowserScreenState extends State<FolderBrowserScreen> {
           SnackBar(
             content: Row(
               children: [
-                const CircularProgressIndicator(),
+                const CircularProgressIndicator(year2023: false,),
                 const SizedBox(width: 12),
                 Text('Downloading "${file.name}"...'),
               ],
@@ -280,7 +280,7 @@ class _FolderBrowserScreenState extends State<FolderBrowserScreen> {
     return Scaffold(
       appBar: AppBar(title: Text('Folder: ${widget.folderPath}')),
       body: _loading
-          ? const Center(child: CircularProgressIndicator())
+          ? const Center(child: CircularProgressIndicator(year2023: false,))
           : RefreshIndicator(
               onRefresh: _load,
               child: ListView(

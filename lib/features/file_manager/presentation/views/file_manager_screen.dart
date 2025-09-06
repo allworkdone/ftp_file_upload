@@ -39,6 +39,7 @@ class FileManagerScreen extends ConsumerWidget {
                 .go(RouteNames.uploadPath(folderPath: state.currentPath)),
           ),
           PopupMenuButton<String>(
+            color: AppColors.darkSurface,
             icon: Icon(Icons.more_vert, color: AppColors.primaryLight),
             onSelected: (value) async {
               switch (value) {
@@ -91,6 +92,7 @@ class FileManagerScreen extends ConsumerWidget {
         child: state.loading
             ? Center(
                 child: CircularProgressIndicator(
+                  year2023: false,
                   color: AppColors.primaryLight,
                   backgroundColor: AppColors.darkSurface,
                 ),

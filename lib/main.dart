@@ -45,6 +45,10 @@ void main() async {
     AppLogger.error('App initialization failed', error, stackTrace);
     runApp(
       MaterialApp(
+        theme: ThemeData(
+          useMaterial3: true, // Enable Material 3
+          colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
+        ),
         home: Scaffold(
           body: Center(
             child: Column(

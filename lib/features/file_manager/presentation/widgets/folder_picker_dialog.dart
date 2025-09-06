@@ -26,7 +26,10 @@ class _FolderPickerDialogState extends State<FolderPickerDialog> {
   }
 
   Future<void> _load() async {
-    setState(() { _loading = true; _error = null; });
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
     try {
       _folders = await getIt<GetFoldersUsecase>()(_path);
     } catch (e) {
@@ -38,7 +41,8 @@ class _FolderPickerDialogState extends State<FolderPickerDialog> {
 
   void _goUp() {
     if (_path == '/' || _path.isEmpty) return;
-    final p = _path.endsWith('/') ? _path.substring(0, _path.length - 1) : _path;
+    final p =
+        _path.endsWith('/') ? _path.substring(0, _path.length - 1) : _path;
     final i = p.lastIndexOf('/');
     _path = i <= 0 ? '/' : p.substring(0, i);
     _load();
@@ -56,14 +60,21 @@ class _FolderPickerDialogState extends State<FolderPickerDialog> {
       content: SizedBox(
         width: 480,
         child: _loading
-            ? const Center(child: Padding(padding: EdgeInsets.all(16), child: CircularProgressIndicator()))
+            ? const Center(
+                child: Padding(
+                    padding: EdgeInsets.all(16),
+                    child: CircularProgressIndicator(
+                      year2023: false,
+                    )))
             : Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(_path, style: const TextStyle(fontWeight: FontWeight.w600)),
+                  Text(_path,
+                      style: const TextStyle(fontWeight: FontWeight.w600)),
                   const SizedBox(height: 12),
-                  if (_error != null) Text(_error!, style: const TextStyle(color: Colors.red)),
+                  if (_error != null)
+                    Text(_error!, style: const TextStyle(color: Colors.red)),
                   Flexible(
                     child: ListView(
                       shrinkWrap: true,
@@ -85,10 +96,13 @@ class _FolderPickerDialogState extends State<FolderPickerDialog> {
               ),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-        ElevatedButton(onPressed: () => Navigator.pop(context, _path), child: const Text('Select')),
+        TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel')),
+        ElevatedButton(
+            onPressed: () => Navigator.pop(context, _path),
+            child: const Text('Select')),
       ],
     );
   }
 }
-
