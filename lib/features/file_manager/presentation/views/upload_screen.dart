@@ -1,3 +1,4 @@
+import 'package:file_upload/app/theme/app_colors.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -34,24 +35,47 @@ class _UploadScreenState extends ConsumerState<UploadScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: AppColors.darkBackground,
       appBar: AppBar(
-        title: const Text('Upload Interface'),
+        backgroundColor: AppColors.darkSurface,
+        foregroundColor: Colors.white,
+        title: const Text(
+          'Upload Interface',
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
         actions: [
           IconButton(
             tooltip: 'Choose Folder',
-            icon: const Icon(Icons.folder_open),
+            icon: Icon(Icons.folder_open, color: AppColors.primaryLight),
             onPressed: _pickFolder,
           ),
         ],
       ),
-      body: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 720),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: FileUploadWidget(
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: RadialGradient(
+            center: Alignment.topRight,
+            radius: 1.5,
+            colors: [
+              Color(0xFF1A0033),
+              AppColors.darkBackground,
+            ],
+            stops: [0.1, 0.9],
+          ),
+        ),
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 800),
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: FileUploadWidget(
                 folderPath: _folder,
-                onFolderChanged: (p) => setState(() => _folder = p)),
+                onFolderChanged: (p) => setState(() => _folder = p),
+              ),
+            ),
           ),
         ),
       ),

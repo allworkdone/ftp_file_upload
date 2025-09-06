@@ -1,6 +1,4 @@
-// lib/features/file_manager/presentation/widgets/file_upload_widget.dart
 import 'dart:io';
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
@@ -13,10 +11,10 @@ import '../../domain/usecases/create_folder_usecase.dart';
 import '../../domain/usecases/get_folders_usecase.dart';
 import '../../domain/usecases/generate_link_usecase.dart';
 import '../../domain/entities/ftp_folder.dart';
-import '../../data/datasources/local_file_datasource.dart';
 import '../../presentation/viewmodels/upload_viewmodel.dart';
 import '../../../../core/di/injection.dart';
 import 'folder_picker_dialog.dart';
+import '../../../../app/theme/app_colors.dart'; // Import your purple theme
 
 class FileUploadWidget extends ConsumerStatefulWidget {
   final String folderPath;
@@ -32,36 +30,14 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
   PlatformFile? _picked;
   late final TextEditingController _folderCtrl;
   final TextEditingController _fileNameCtrl = TextEditingController();
-  String? _link;
-  String? _error;
-  bool _loadingFolders = false;
+  String? _link, _error;
+  bool _loadingFolders = false,
+      _isDragging = false,
+      _isProcessingBundle = false;
   List<FTPFolder> _folders = const [];
   int _chunkSizeMB = 4;
-  bool _isDragging = false;
-  bool _isProcessingBundle = false;
-
-  List<DropdownMenuItem<String>> _buildFolderItems() {
-    final seen = <String>{};
-    final items = <DropdownMenuItem<String>>[];
-    void add(String v) {
-      final val = v.isEmpty ? '/' : v;
-      if (seen.add(val)) {
-        items.add(DropdownMenuItem(value: val, child: Text(val)));
-      }
-    }
-
-    if (_folderCtrl.text.isNotEmpty) add(_folderCtrl.text);
-    for (final f in _folders) {
-      add(f.fullPath);
-    }
-    return items;
-  }
-
-  String? _currentFolderValue(List<DropdownMenuItem<String>> items) {
-    final v = _folderCtrl.text.trim();
-    if (v.isEmpty) return null;
-    return items.any((i) => i.value == v) ? v : null;
-  }
+  final FocusNode _folderFocus = FocusNode();
+  final FocusNode _fileNameFocus = FocusNode();
 
   @override
   void initState() {
@@ -74,16 +50,59 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
   @override
   void didUpdateWidget(covariant FileUploadWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.folderPath != widget.folderPath) {
+    if (oldWidget.folderPath != widget.folderPath)
       _folderCtrl.text = widget.folderPath;
-    }
   }
 
   @override
   void dispose() {
     _folderCtrl.dispose();
     _fileNameCtrl.dispose();
+    _folderFocus.dispose();
+    _fileNameFocus.dispose();
     super.dispose();
+  }
+
+  // Neon glow effect for focused fields
+  BoxDecoration _buildNeonGlow(bool hasFocus) {
+    return BoxDecoration(
+      borderRadius: BorderRadius.circular(16),
+      boxShadow: hasFocus
+          ? [
+              BoxShadow(
+                color: AppColors.primaryLight.withOpacity(0.8),
+                blurRadius: 15,
+                spreadRadius: 2,
+              ),
+              BoxShadow(
+                color: AppColors.primary.withOpacity(0.6),
+                blurRadius: 25,
+                spreadRadius: 1,
+              ),
+            ]
+          : null,
+    );
+  }
+
+  List<DropdownMenuItem<String>> _buildFolderItems() {
+    final seen = <String>{};
+    final items = <DropdownMenuItem<String>>[];
+    void add(String v) {
+      final val = v.isEmpty ? '/' : v;
+      if (seen.add(val))
+        items.add(DropdownMenuItem(
+            value: val,
+            child: Text(val, style: const TextStyle(color: Colors.white))));
+    }
+
+    if (_folderCtrl.text.isNotEmpty) add(_folderCtrl.text);
+    for (final f in _folders) add(f.fullPath);
+    return items;
+  }
+
+  String? _currentFolderValue(List<DropdownMenuItem<String>> items) {
+    final v = _folderCtrl.text.trim();
+    return v.isEmpty ? null : (items.any((i) => i.value == v) ? v : null);
   }
 
   Future<void> _loadFolders(String base) async {
@@ -104,281 +123,124 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
     return i <= 0 ? '/' : s.substring(0, i);
   }
 
-  // Helper method to check if a directory is a valid bundle/package
-  bool _isValidBundle(String filePath) {
-    final fileName = filePath.split('/').last.toLowerCase();
-
-    const validBundleExtensions = [
-      '.xcarchive', // Xcode archive
-      '.app', // macOS/iOS application bundle
-      '.framework', // Framework bundle
-      '.bundle', // Generic bundle
-      '.plugin', // Plugin bundle
-      '.kext', // Kernel extension
-      '.prefPane', // Preference pane
-      '.qlgenerator', // Quick Look generator
-      '.saver', // Screen saver
-      '.service', // Service
-      '.workflow', // Automator workflow
-      '.photoslibrary', // Photos library
-      '.rtfd', // Rich Text Format Directory
-      '.key', // Keynote presentation
-      '.pages', // Pages document
-      '.numbers', // Numbers spreadsheet
-      '.sketch', // Sketch design file
-    ];
-
-    return validBundleExtensions.any((ext) => fileName.endsWith(ext));
-  }
-
-  // Helper method to validate if a file is accessible and uploadable
-  Future<bool> _isValidFileOrBundle(String filePath) async {
-    try {
-      final stat = await FileStat.stat(filePath);
-
-      if (stat.type == FileSystemEntityType.file) {
-        final file = File(filePath);
-        final exists = await file.exists();
-        if (exists) {
-          try {
-            await file.length();
-            return true;
-          } catch (e) {
-            print('[FileUpload] File not readable: $filePath - $e');
-            return false;
-          }
-        }
-        return false;
-      } else if (stat.type == FileSystemEntityType.directory) {
-        // Check if it's a valid bundle OR just a regular directory
-        final dir = Directory(filePath);
-        return await dir.exists();
-      }
-
-      return false;
-    } catch (e) {
-      print('[FileUpload] File validation failed for $filePath: $e');
-      return false;
-    }
-  }
-
-  // Create zip archive from bundle or directory
   Future<PlatformFile> _createZipFromDirectory(String directoryPath) async {
     setState(() => _isProcessingBundle = true);
-
     try {
-      print('[FileUpload] Creating zip archive for directory: $directoryPath');
-
       final dirName = directoryPath.split('/').last;
-      final zipFileName = '$dirName.zip';
-
-      // Create temporary zip file
-      final tempDir = Directory.systemTemp;
-      final zipFile = File('${tempDir.path}/$zipFileName');
-
-      // Create archive
+      final zipFile = File('${Directory.systemTemp.path}/$dirName.zip');
       final archive = Archive();
       final directory = Directory(directoryPath);
 
-      // Add all files from directory to archive
       await for (final entity in directory.list(recursive: true)) {
-        if (entity is File) {
-          try {
+        try {
+          if (entity is File) {
             final relativePath =
                 entity.path.substring(directoryPath.length + 1);
             final fileBytes = await entity.readAsBytes();
-            final archiveFile =
-                ArchiveFile(relativePath, fileBytes.length, fileBytes);
-            archive.addFile(archiveFile);
-            print('[FileUpload] Added to archive: $relativePath');
-          } catch (e) {
-            print(
-                '[FileUpload] Failed to add file to archive: ${entity.path} - $e');
-          }
-        } else if (entity is Directory) {
-          try {
+            archive.addFile(
+                ArchiveFile(relativePath, fileBytes.length, fileBytes));
+          } else if (entity is Directory) {
             final relativePath =
                 entity.path.substring(directoryPath.length + 1) + '/';
-            final archiveFile = ArchiveFile(relativePath, 0, []);
-            archive.addFile(archiveFile);
-          } catch (e) {
-            print(
-                '[FileUpload] Failed to add directory to archive: ${entity.path} - $e');
+            archive.addFile(ArchiveFile(relativePath, 0, []));
           }
+        } catch (e) {
+          print('Failed to add ${entity.path}: $e');
         }
       }
 
-      // Encode and save zip
       final zipData = ZipEncoder().encode(archive);
       if (zipData != null) {
         await zipFile.writeAsBytes(zipData);
-        print('[FileUpload] Zip archive created: ${zipFile.path}');
-
-        final fileSize = await zipFile.length();
         return PlatformFile(
-          name: zipFileName,
-          size: fileSize,
-          path: zipFile.path,
-        );
+            name: '$dirName.zip',
+            size: await zipFile.length(),
+            path: zipFile.path);
       } else {
         throw Exception('Failed to encode zip archive');
       }
     } catch (e) {
-      print('[FileUpload] Error creating zip archive: $e');
       throw Exception('Failed to create zip archive: $e');
     } finally {
       setState(() => _isProcessingBundle = false);
     }
   }
 
-  // FIXED: Direct file picker without confusing dialog
   Future<void> _pickFile() async {
-    print('[FileUpload] Starting direct file picker...');
-
     try {
       setState(() => _error = null);
+      final result = await FilePicker.platform.pickFiles(
+          allowMultiple: false,
+          type: FileType.any,
+          withData: Platform.isMacOS,
+          lockParentWindow: Platform.isMacOS);
 
-      final fileResult = await FilePicker.platform.pickFiles(
-        allowMultiple: false,
-        type: FileType.any,
-        withData: Platform.isMacOS,
-        withReadStream: false,
-        lockParentWindow: Platform.isMacOS,
-      );
-
-      if (fileResult != null && fileResult.files.isNotEmpty) {
-        final file = fileResult.files.single;
-        print('[FileUpload] File picked: ${file.name}');
-
-        _picked = file;
+      if (result?.files.isNotEmpty == true) {
+        _picked = result!.files.single;
         _fileNameCtrl.text = _picked!.name;
-
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('File selected: ${_picked!.name}'),
-              backgroundColor: Colors.green,
-            ),
-          );
-        }
+        _showSnackBar('File selected: ${_picked!.name}', Colors.green);
         setState(() {});
       }
     } catch (e) {
-      print('[FileUpload] Error picking file: $e');
       _showError('Failed to select file: $e');
     }
   }
 
-  // NEW: Separate directory picker
   Future<void> _pickDirectory() async {
-    print('[FileUpload] Starting directory picker...');
-
     try {
       setState(() => _error = null);
-
       final directoryPath = await FilePicker.platform.getDirectoryPath();
       if (directoryPath != null) {
-        print('[FileUpload] Directory selected: $directoryPath');
-
-        // Always create zip from directory (whether it's a bundle or not)
         _picked = await _createZipFromDirectory(directoryPath);
         _fileNameCtrl.text = _picked!.name;
-
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Directory converted to zip: ${_picked!.name}'),
-              backgroundColor: Colors.green,
-            ),
-          );
-        }
+        _showSnackBar(
+            'Directory converted to zip: ${_picked!.name}', Colors.green);
         setState(() {});
       }
     } catch (e) {
-      print('[FileUpload] Error picking directory: $e');
       _showError('Failed to select directory: $e');
     }
   }
 
-  // Handle dropped files with bundle support
   void _handleDroppedFiles(List<XFile> files) async {
-    print('[FileUpload] Handling ${files.length} dropped files');
-
     setState(() => _isDragging = false);
-
-    if (files.isEmpty) {
-      print('[FileUpload] No files in drop');
-      return;
-    }
+    if (files.isEmpty) return;
 
     try {
       final xFile = files.first;
-      print('[FileUpload] Processing dropped file: ${xFile.name}');
-      print('[FileUpload] File path: ${xFile.path}');
-
-      // Check if it's a valid file or directory
-      final isValid = await _isValidFileOrBundle(xFile.path);
-      if (!isValid) {
-        _showError('Dropped item "${xFile.name}" is not accessible');
-        return;
-      }
-
-      // Check if it's a directory
       final stat = await FileStat.stat(xFile.path);
+
       if (stat.type == FileSystemEntityType.directory) {
-        print('[FileUpload] Directory detected, creating zip...');
         _picked = await _createZipFromDirectory(xFile.path);
-
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Directory converted to zip: ${_picked!.name}'),
-              backgroundColor: Colors.green,
-            ),
-          );
-        }
+        _showSnackBar(
+            'Directory converted to zip: ${_picked!.name}', Colors.green);
       } else {
-        // Regular file
         final fileSize = await File(xFile.path).length();
-        _picked = PlatformFile(
-          name: xFile.name,
-          size: fileSize,
-          path: xFile.path,
-        );
-
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('File added: ${_picked!.name}'),
-              backgroundColor: Colors.green,
-            ),
-          );
-        }
+        _picked =
+            PlatformFile(name: xFile.name, size: fileSize, path: xFile.path);
+        _showSnackBar('File added: ${_picked!.name}', Colors.green);
       }
 
       _fileNameCtrl.text = _picked!.name;
       setState(() {});
-
-      print('[FileUpload] Successfully processed: ${_picked!.name}');
     } catch (e) {
-      print('[FileUpload] Error processing dropped file: $e');
       _showError('Failed to process dropped file: $e');
     }
   }
 
-  void _showError(String message) {
+  void _showError(String message) => _showSnackBar(message, Colors.red);
+
+  void _showSnackBar(String message, Color color) {
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(message),
-          backgroundColor: Colors.red,
-          duration: const Duration(seconds: 4),
-        ),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(message),
+        backgroundColor: color,
+        duration: const Duration(seconds: 3),
+        behavior: SnackBarBehavior.floating,
+      ));
     }
   }
 
-  // Method to remove selected file
   void _removeSelectedFile() {
     setState(() {
       _picked = null;
@@ -386,15 +248,7 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
       _link = null;
       _error = null;
     });
-
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Selected file removed'),
-          backgroundColor: Colors.orange,
-        ),
-      );
-    }
+    _showSnackBar('Selected file removed', Colors.orange);
   }
 
   Future<void> _createFolder() async {
@@ -402,29 +256,59 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
     final created = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Create Folder'),
+        backgroundColor: AppColors.darkSurface.withOpacity(0.9),
+        surfaceTintColor: Colors.transparent,
+        title:
+            const Text('Create Folder', style: TextStyle(color: Colors.white)),
         content: TextField(
-            controller: nameCtrl,
-            decoration: const InputDecoration(labelText: 'Folder name')),
+          controller: nameCtrl,
+          style: const TextStyle(color: Colors.white),
+          decoration: InputDecoration(
+            labelText: 'Folder name',
+            labelStyle: const TextStyle(color: Colors.white70),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide:
+                  BorderSide(color: AppColors.primaryLight.withOpacity(0.3)),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide:
+                  BorderSide(color: AppColors.primaryLight.withOpacity(0.3)),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide:
+                  const BorderSide(color: AppColors.primaryLight, width: 2),
+            ),
+            filled: true,
+            fillColor: AppColors.darkSurface.withOpacity(0.8),
+          ),
+        ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel',
+                  style: TextStyle(color: Colors.white70))),
           ElevatedButton(
-              onPressed: () => Navigator.pop(ctx, nameCtrl.text.trim()),
-              child: const Text('Create')),
+            onPressed: () => Navigator.pop(ctx, nameCtrl.text.trim()),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Create'),
+          ),
         ],
       ),
     );
-    if (created != null && created.isNotEmpty) {
+
+    if (created?.isNotEmpty == true) {
       final base = _folderCtrl.text.trim();
-      final newPath = ('${base.endsWith('/') ? base : base + '/'}$created')
+      final newPath = ('${base.endsWith('/') ? base : '$base/'}$created')
           .replaceAll(RegExp(r"/+"), '/');
       await getIt<CreateFolderUsecase>()(newPath);
       _folderCtrl.text = newPath;
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Folder created: $newPath')));
-      }
+      _showSnackBar('Folder created: $newPath', Colors.green);
     }
   }
 
@@ -442,26 +326,17 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
         ? file.name
         : _fileNameCtrl.text.trim();
     final remotePath =
-        ('${folder.endsWith('/') ? folder : folder + '/'}$fileName')
+        ('${folder.endsWith('/') ? folder : '$folder/'}$fileName')
             .replaceAll(RegExp(r"/+"), '/');
-
-    print('[FileUpload] Starting upload...');
-    print('[FileUpload] Local file: ${file.name}');
-    print('[FileUpload] Local path: ${file.path}');
-    print('[FileUpload] Remote path: $remotePath');
 
     try {
       String? uploadPath = file.path;
 
-      // If we don't have a valid path but have bytes, create a temporary file
       if ((uploadPath == null || !await File(uploadPath).exists()) &&
           file.bytes != null) {
-        print('[FileUpload] Creating temporary file for upload...');
-        final tempDir = Directory.systemTemp;
-        final tempFile = File('${tempDir.path}/${file.name}');
+        final tempFile = File('${Directory.systemTemp.path}/${file.name}');
         await tempFile.writeAsBytes(file.bytes!);
         uploadPath = tempFile.path;
-        print('[FileUpload] Temporary file created: $uploadPath');
       }
 
       if (uploadPath == null || !await File(uploadPath).exists()) {
@@ -481,306 +356,448 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
       final link = getIt<GenerateLinkUsecase>()
           .fileUrl(folder.replaceFirst(RegExp('^/'), ''), fileName);
       setState(() => _link = link);
-
-      print('[FileUpload] Upload successful');
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Upload completed: $fileName'),
-            backgroundColor: Colors.green,
-            duration: const Duration(seconds: 2),
-          ),
-        );
-      }
+      _showSnackBar('Upload completed: $fileName', Colors.green);
     } catch (e) {
-      print('[FileUpload] Upload failed: $e');
       setState(() => _error = e.toString());
       _showError('Upload failed: $e');
     }
   }
 
+  Widget _buildDropArea() {
+    return DropTarget(
+      onDragDone: (detail) => _handleDroppedFiles(detail.files),
+      onDragEntered: (_) => setState(() => _isDragging = true),
+      onDragExited: (_) => setState(() => _isDragging = false),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 24),
+        decoration: BoxDecoration(
+          border: Border.all(
+            color: _isDragging
+                ? AppColors.primaryLight
+                : AppColors.primaryLight.withOpacity(0.4),
+            width: _isDragging ? 2.5 : 1.5,
+          ),
+          borderRadius: BorderRadius.circular(16),
+          color: _isDragging
+              ? AppColors.primaryLight.withOpacity(0.1)
+              : AppColors.darkSurface.withOpacity(0.6),
+          boxShadow: _isDragging
+              ? [
+                  BoxShadow(
+                    color: AppColors.primaryLight.withOpacity(0.3),
+                    blurRadius: 20,
+                    spreadRadius: 3,
+                  ),
+                ]
+              : null,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (_isProcessingBundle) ...[
+              CircularProgressIndicator(color: AppColors.primaryLight),
+              const SizedBox(height: 16),
+              const Text('Converting directory to zip...',
+                  style: TextStyle(color: Colors.white70)),
+            ] else ...[
+              Icon(
+                _isDragging ? Icons.file_download : Icons.upload_file,
+                size: 48,
+                color: _isDragging
+                    ? AppColors.primaryLight
+                    : AppColors.primaryLight.withOpacity(0.8),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                _isDragging
+                    ? 'Release to add file or directory'
+                    : (_picked == null
+                        ? 'Drag & drop files/directories here'
+                        : _picked!.name),
+                style: TextStyle(
+                  color: _isDragging ? AppColors.primaryLight : Colors.white70,
+                  fontWeight: _isDragging ? FontWeight.w600 : FontWeight.normal,
+                  fontSize: 16,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 20),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  _buildNeonButton(
+                    onPressed: _isProcessingBundle ? null : _pickFile,
+                    icon: Icons.insert_drive_file,
+                    label: 'Select File',
+                  ),
+                  const SizedBox(width: 16),
+                  _buildNeonButton(
+                    onPressed: _isProcessingBundle ? null : _pickDirectory,
+                    icon: Icons.folder,
+                    label: 'Select Directory',
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNeonButton({
+    required VoidCallback? onPressed,
+    required IconData icon,
+    required String label,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: onPressed != null
+            ? [
+                BoxShadow(
+                  color: AppColors.primaryLight.withOpacity(0.4),
+                  blurRadius: 10,
+                  spreadRadius: 1,
+                ),
+              ]
+            : null,
+      ),
+      child: ElevatedButton.icon(
+        onPressed: onPressed,
+        icon: Icon(icon, size: 18, color: Colors.white),
+        label: Text(label, style: const TextStyle(color: Colors.white)),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: AppColors.primary,
+          foregroundColor: Colors.white,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+            side: BorderSide(
+                color: AppColors.primaryLight.withOpacity(0.5), width: 1),
+          ),
+          elevation: 0,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final upload = ref.watch(uploadViewModelProvider);
-    return SingleChildScrollView(
-        child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('Client-side Upload',
-            style: Theme.of(context).textTheme.titleLarge),
-        const SizedBox(height: 12),
+    final items = _buildFolderItems();
 
-        // Enhanced Pick area with drag & drop support
-        DropTarget(
-          onDragDone: (detail) {
-            print('[FileUpload] Drag done with ${detail.files.length} files');
-            _handleDroppedFiles(detail.files);
-          },
-          onDragEntered: (detail) {
-            print('[FileUpload] Drag entered');
-            setState(() => _isDragging = true);
-          },
-          onDragExited: (detail) {
-            print('[FileUpload] Drag exited');
-            setState(() => _isDragging = false);
-          },
-          child: Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(vertical: 24),
-            decoration: BoxDecoration(
-              border: Border.all(
-                color: _isDragging
-                    ? Theme.of(context).colorScheme.primary
-                    : Theme.of(context).colorScheme.primary.withOpacity(0.4),
-                width: _isDragging ? 2.5 : 1.5,
-              ),
-              borderRadius: BorderRadius.circular(12),
-              color: _isDragging
-                  ? Theme.of(context).colorScheme.primary.withOpacity(0.1)
-                  : null,
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (_isProcessingBundle) ...[
-                  const CircularProgressIndicator(),
-                  const SizedBox(height: 8),
-                  const Text('Converting directory to zip...'),
-                ] else if (_picked != null &&
-                    (_picked!.extension?.toLowerCase().contains('png') ==
-                            true ||
-                        _picked!.extension?.toLowerCase().contains('jpg') ==
-                            true ||
-                        _picked!.extension?.toLowerCase().contains('jpeg') ==
-                            true ||
-                        _picked!.extension?.toLowerCase().contains('webp') ==
-                            true ||
-                        _picked!.extension?.toLowerCase().contains('gif') ==
-                            true))
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: _picked!.path != null
-                        ? Image.file(
-                            File(_picked!.path!),
-                            height: 120,
-                            fit: BoxFit.cover,
-                          )
-                        : (_picked!.bytes != null
-                            ? Image.memory(_picked!.bytes!,
-                                height: 120, fit: BoxFit.cover)
-                            : const Icon(Icons.image, size: 40)),
-                  )
-                else
-                  Icon(
-                    _isDragging ? Icons.file_download : Icons.upload_file,
-                    size: 40,
-                    color: _isDragging
-                        ? Theme.of(context).colorScheme.primary
-                        : null,
-                  ),
-                if (!_isProcessingBundle) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    _isDragging
-                        ? 'Release to add file or directory'
-                        : (_picked == null
-                            ? 'Drag & drop files/directories here'
-                            : _picked!.name),
-                    style: TextStyle(
-                      color: _isDragging
-                          ? Theme.of(context).colorScheme.primary
-                          : null,
-                      fontWeight: _isDragging ? FontWeight.w500 : null,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  // NEW: Separate buttons for file and directory selection
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      ElevatedButton.icon(
-                        onPressed: _isProcessingBundle ? null : _pickFile,
-                        icon: const Icon(Icons.insert_drive_file, size: 18),
-                        label: const Text('Select File'),
-                      ),
-                      const SizedBox(width: 12),
-                      ElevatedButton.icon(
-                        onPressed: _isProcessingBundle ? null : _pickDirectory,
-                        icon: const Icon(Icons.folder, size: 18),
-                        label: const Text('Select Directory'),
-                      ),
-                    ],
-                  ),
-                  if (_isDragging)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 8),
-                      child: Text(
-                        '(Directories will be automatically zipped)',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Theme.of(context)
-                              .colorScheme
-                              .onSurface
-                              .withOpacity(0.6),
-                        ),
-                      ),
-                    ),
-                ],
-              ],
-            ),
-          ),
-        ),
-
-        // Remove selected file button
-        if (_picked != null) ...[
-          const SizedBox(height: 8),
-          Center(
-            child: TextButton.icon(
-              onPressed: _removeSelectedFile,
-              icon: const Icon(Icons.clear, size: 18),
-              label: const Text('Remove selected file'),
-              style: TextButton.styleFrom(
-                foregroundColor: Colors.red,
-              ),
-            ),
-          ),
-        ],
-
-        const SizedBox(height: 16),
-
-        // Remote folder selector
-        Text('Remote Folder', style: Theme.of(context).textTheme.labelLarge),
-        const SizedBox(height: 6),
-        Row(
-          children: [
-            Expanded(
-              child: Builder(builder: (context) {
-                final items = _buildFolderItems();
-                return DropdownButtonFormField<String>(
-                  value: _currentFolderValue(items),
-                  hint: Text(_folderCtrl.text),
-                  isExpanded: true,
-                  items: items,
-                  onChanged: (v) async {
-                    setState(() => _folderCtrl.text = v ?? _folderCtrl.text);
-                    widget.onFolderChanged?.call(_folderCtrl.text);
-                    await _loadFolders(_folderCtrl.text);
-                  },
-                );
-              }),
-            ),
-            const SizedBox(width: 8),
-            IconButton(
-              tooltip: 'Create folder',
-              onPressed: _createFolder,
-              icon: const Icon(Icons.create_new_folder_outlined),
-            ),
-            IconButton(
-              tooltip: 'Refresh',
-              onPressed:
-                  _loadingFolders ? null : () => _loadFolders(_folderCtrl.text),
-              icon: const Icon(Icons.refresh),
-            ),
-            IconButton(
-              tooltip: 'Browse…',
-              onPressed: () async {
-                final selected = await showDialog<String>(
-                  context: context,
-                  builder: (_) =>
-                      FolderPickerDialog(initialPath: _folderCtrl.text),
-                );
-                if (selected != null && selected.isNotEmpty) {
-                  setState(() => _folderCtrl.text = selected);
-                  widget.onFolderChanged?.call(_folderCtrl.text);
-                  await _loadFolders(_folderCtrl.text);
-                }
-              },
-              icon: const Icon(Icons.folder_open),
-            ),
-            IconButton(
-              tooltip: 'Up one level',
-              onPressed: () async {
-                final p = _parentOf(_folderCtrl.text);
-                setState(() => _folderCtrl.text = p);
-                widget.onFolderChanged?.call(_folderCtrl.text);
-                await _loadFolders(_folderCtrl.text);
-              },
-              icon: const Icon(Icons.arrow_upward),
-            ),
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: RadialGradient(
+          center: Alignment.topRight,
+          radius: 1.5,
+          colors: [
+            Color(0xFF1A0033),
+            AppColors.darkBackground,
           ],
+          stops: [0.1, 0.9],
         ),
-
-        const SizedBox(height: 16),
-        // Chunk size (UI)
-        Text('Chunk size', style: Theme.of(context).textTheme.labelLarge),
-        const SizedBox(height: 6),
-        DropdownButtonFormField<int>(
-          value: _chunkSizeMB,
-          items: const [1, 2, 4, 8, 16, 32]
-              .map((e) => DropdownMenuItem(value: e, child: Text('$e MB')))
-              .toList(),
-          onChanged: (v) => setState(() => _chunkSizeMB = v ?? _chunkSizeMB),
-        ),
-
-        const SizedBox(height: 16),
-        // Custom filename
-        TextFormField(
-          controller: _fileNameCtrl,
-          decoration: const InputDecoration(
-            labelText: 'Custom filename',
-            helperText: 'Directories will be automatically renamed to .zip',
-          ),
-        ),
-
-        const SizedBox(height: 16),
-        // Upload button + progress
-        SizedBox(
-          width: double.infinity,
-          child: ElevatedButton.icon(
-            icon: const Icon(Icons.cloud_upload_outlined),
-            label: const Text('Execute upload'),
-            onPressed:
-                _picked == null || upload.uploading || _isProcessingBundle
-                    ? null
-                    : _upload,
-          ),
-        ),
-        if (upload.uploading) ...[
-          const SizedBox(height: 8),
-          LinearProgressIndicator(
-              value: upload.progress == null
-                  ? null
-                  : upload.progress!.progressPercentage / 100.0),
-          const SizedBox(height: 6),
-          Text(upload.progress == null
-              ? 'Starting…'
-              : '${upload.progress!.fileName} — ${upload.progress!.progressPercentage.toStringAsFixed(0)}%'),
-        ],
-
-        if (_error != null) ...[
-          const SizedBox(height: 12),
-          Text(_error!, style: const TextStyle(color: Colors.red)),
-        ],
-
-        if (_link != null) ...[
-          const SizedBox(height: 16),
-          Text('Shareable link', style: Theme.of(context).textTheme.labelLarge),
-          const SizedBox(height: 6),
-          Row(
-            children: [
-              Expanded(
-                child: SelectableText(_link!),
+      ),
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Client-side Upload',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+                shadows: [
+                  Shadow(
+                    color: AppColors.primaryLight,
+                    blurRadius: 10,
+                  ),
+                ],
               ),
-              IconButton(
-                tooltip: 'Copy',
-                onPressed: () => Clipboard.setData(ClipboardData(text: _link!)),
-                icon: const Icon(Icons.copy),
+            ),
+            const SizedBox(height: 20),
+            _buildDropArea(),
+            if (_picked != null) ...[
+              const SizedBox(height: 16),
+              Center(
+                child: TextButton.icon(
+                  onPressed: _removeSelectedFile,
+                  icon: const Icon(Icons.clear, size: 18, color: Colors.red),
+                  label: const Text('Remove selected file',
+                      style: TextStyle(color: Colors.red)),
+                  style: TextButton.styleFrom(
+                    foregroundColor: Colors.red,
+                    side: BorderSide(color: Colors.red.withOpacity(0.5)),
+                  ),
+                ),
               ),
             ],
-          ),
-        ],
-      ],
-    ));
+            const SizedBox(height: 24),
+            const Text('Remote Folder',
+                style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w500)),
+            const SizedBox(height: 8),
+            Focus(
+              onFocusChange: (hasFocus) => setState(() {}),
+              child: Container(
+                decoration: _buildNeonGlow(_folderFocus.hasFocus),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: DropdownButtonFormField<String>(
+                        value: _currentFolderValue(items),
+                        hint: Text(_folderCtrl.text,
+                            style: const TextStyle(color: Colors.white70)),
+                        isExpanded: true,
+                        items: items,
+                        dropdownColor: AppColors.darkSurface,
+                        style: const TextStyle(color: Colors.white),
+                        decoration: InputDecoration(
+                          filled: true,
+                          fillColor: AppColors.darkSurface.withOpacity(0.8),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            borderSide: BorderSide(
+                                color: AppColors.primaryLight.withOpacity(0.3)),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            borderSide: BorderSide(
+                                color: AppColors.primaryLight.withOpacity(0.3)),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            borderSide: const BorderSide(
+                                color: AppColors.primaryLight, width: 2),
+                          ),
+                        ),
+                        onChanged: (v) async {
+                          setState(
+                              () => _folderCtrl.text = v ?? _folderCtrl.text);
+                          widget.onFolderChanged?.call(_folderCtrl.text);
+                          await _loadFolders(_folderCtrl.text);
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    IconButton(
+                      tooltip: 'Create folder',
+                      onPressed: _createFolder,
+                      icon: Icon(Icons.create_new_folder_outlined,
+                          color: AppColors.primaryLight),
+                    ),
+                    IconButton(
+                      tooltip: 'Refresh',
+                      onPressed: _loadingFolders
+                          ? null
+                          : () => _loadFolders(_folderCtrl.text),
+                      icon: Icon(Icons.refresh,
+                          color: _loadingFolders
+                              ? Colors.grey
+                              : AppColors.primaryLight),
+                    ),
+                    IconButton(
+                      tooltip: 'Browse…',
+                      onPressed: () async {
+                        final selected = await showDialog<String>(
+                          context: context,
+                          builder: (_) =>
+                              FolderPickerDialog(initialPath: _folderCtrl.text),
+                        );
+                        if (selected?.isNotEmpty == true) {
+                          setState(() => _folderCtrl.text = selected!);
+                          widget.onFolderChanged?.call(_folderCtrl.text);
+                          await _loadFolders(_folderCtrl.text);
+                        }
+                      },
+                      icon: Icon(Icons.folder_open,
+                          color: AppColors.primaryLight),
+                    ),
+                    IconButton(
+                      tooltip: 'Up one level',
+                      onPressed: () async {
+                        final p = _parentOf(_folderCtrl.text);
+                        setState(() => _folderCtrl.text = p);
+                        widget.onFolderChanged?.call(_folderCtrl.text);
+                        await _loadFolders(_folderCtrl.text);
+                      },
+                      icon: Icon(Icons.arrow_upward,
+                          color: AppColors.primaryLight),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+            const Text('Chunk size',
+                style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w500)),
+            const SizedBox(height: 8),
+            Container(
+              decoration: BoxDecoration(
+                color: AppColors.darkSurface.withOpacity(0.8),
+                borderRadius: BorderRadius.circular(16),
+                border:
+                    Border.all(color: AppColors.primaryLight.withOpacity(0.3)),
+              ),
+              child: DropdownButtonFormField<int>(
+                value: _chunkSizeMB,
+                dropdownColor: AppColors.darkSurface,
+                style: const TextStyle(color: AppColors.darkSurface),
+                items: const [1, 2, 4, 8, 16, 32]
+                    .map((e) => DropdownMenuItem(
+                        value: e,
+                        child: Text('$e MB',
+                            style: TextStyle(color: Colors.white))))
+                    .toList(),
+                onChanged: (v) =>
+                    setState(() => _chunkSizeMB = v ?? _chunkSizeMB),
+                decoration: InputDecoration(
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+                  border: InputBorder.none,
+                  fillColor: AppColors.darkBackground,
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+            Focus(
+              onFocusChange: (hasFocus) => setState(() {}),
+              child: Container(
+                decoration: _buildNeonGlow(_fileNameFocus.hasFocus),
+                child: TextFormField(
+                  controller: _fileNameCtrl,
+                  focusNode: _fileNameFocus,
+                  style: const TextStyle(color: Colors.white),
+                  decoration: InputDecoration(
+                    labelText: 'Custom filename',
+                    labelStyle: const TextStyle(color: Colors.white70),
+                    helperText:
+                        'Directories will be automatically renamed to .zip',
+                    helperStyle: const TextStyle(color: Colors.white54),
+                    filled: true,
+                    fillColor: AppColors.darkSurface.withOpacity(0.8),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      borderSide: BorderSide(
+                          color: AppColors.primaryLight.withOpacity(0.3)),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      borderSide: BorderSide(
+                          color: AppColors.primaryLight.withOpacity(0.3)),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      borderSide: const BorderSide(
+                          color: AppColors.primaryLight, width: 2),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 24),
+            SizedBox(
+              width: double.infinity,
+              child: _buildNeonButton(
+                onPressed:
+                    _picked == null || upload.uploading || _isProcessingBundle
+                        ? null
+                        : _upload,
+                icon: Icons.cloud_upload_outlined,
+                label: 'Execute upload',
+              ),
+            ),
+            if (upload.uploading) ...[
+              const SizedBox(height: 20),
+              LinearProgressIndicator(
+                value: upload.progress?.progressPercentage != null
+                    ? upload.progress!.progressPercentage / 100.0
+                    : null,
+                backgroundColor: AppColors.darkSurface,
+                color: AppColors.primaryLight,
+                minHeight: 6,
+                borderRadius: BorderRadius.circular(3),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                upload.progress == null
+                    ? 'Starting…'
+                    : '${upload.progress!.fileName} — ${upload.progress!.progressPercentage.toStringAsFixed(0)}%',
+                style: const TextStyle(color: Colors.white70),
+                textAlign: TextAlign.center,
+              ),
+            ],
+            if (_error != null) ...[
+              const SizedBox(height: 20),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.red.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: Colors.red.withOpacity(0.4)),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.error, color: Colors.red[300]),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        _error!,
+                        style: TextStyle(color: Colors.red[300]),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+            if (_link != null) ...[
+              const SizedBox(height: 24),
+              const Text('Shareable link',
+                  style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w500)),
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: AppColors.darkSurface.withOpacity(0.6),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                      color: AppColors.primaryLight.withOpacity(0.3)),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: SelectableText(
+                        _link!,
+                        style: const TextStyle(color: Colors.white),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    IconButton(
+                      tooltip: 'Copy',
+                      onPressed: () {
+                        Clipboard.setData(ClipboardData(text: _link!));
+                        _showSnackBar('Link copied to clipboard', Colors.green);
+                      },
+                      icon: Icon(Icons.copy, color: AppColors.primaryLight),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
   }
 }

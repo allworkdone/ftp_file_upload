@@ -8,6 +8,7 @@ import '../viewmodels/file_manager_viewmodel.dart';
 import '../../../authentication/presentation/viewmodels/auth_viewmodel.dart';
 import '../../domain/usecases/delete_folder_usecase.dart';
 import '../../../../core/di/injection.dart';
+import '../../../../app/theme/app_colors.dart'; // Import your purple theme
 
 class FileManagerScreen extends ConsumerWidget {
   const FileManagerScreen({super.key});
@@ -18,21 +19,27 @@ class FileManagerScreen extends ConsumerWidget {
     final auth = ref.watch(authViewModelProvider);
 
     return Scaffold(
+      backgroundColor: AppColors.darkBackground,
       appBar: AppBar(
-        title: const Text('File Manager'),
+        backgroundColor: AppColors.darkSurface,
+        foregroundColor: Colors.white,
+        title:
+            const Text('File Manager', style: TextStyle(color: Colors.white)),
         actions: [
           IconButton(
             tooltip: 'Browse Root',
-            icon: const Icon(Icons.folder_open),
+            icon: Icon(Icons.folder_open, color: AppColors.primaryLight),
             onPressed: () => context.go(RouteNames.folderBrowserPath('/')),
           ),
           IconButton(
             tooltip: 'Upload',
-            icon: const Icon(Icons.cloud_upload_outlined),
+            icon: Icon(Icons.cloud_upload_outlined,
+                color: AppColors.primaryLight),
             onPressed: () => context
                 .go(RouteNames.uploadPath(folderPath: state.currentPath)),
           ),
           PopupMenuButton<String>(
+            icon: Icon(Icons.more_vert, color: AppColors.primaryLight),
             onSelected: (value) async {
               switch (value) {
                 case 'logout':
@@ -48,9 +55,10 @@ class FileManagerScreen extends ConsumerWidget {
                 value: 'settings',
                 child: Row(
                   children: [
-                    const Icon(Icons.settings),
+                    Icon(Icons.settings, color: AppColors.primaryLight),
                     const SizedBox(width: 8),
-                    Text('Connection Settings'),
+                    const Text('Connection Settings',
+                        style: TextStyle(color: Colors.white)),
                   ],
                 ),
               ),
@@ -58,9 +66,9 @@ class FileManagerScreen extends ConsumerWidget {
                 value: 'logout',
                 child: Row(
                   children: [
-                    const Icon(Icons.logout, color: Colors.red),
+                    Icon(Icons.logout, color: Colors.red[300]),
                     const SizedBox(width: 8),
-                    const Text('Logout', style: TextStyle(color: Colors.red)),
+                    Text('Logout', style: TextStyle(color: Colors.red[300])),
                   ],
                 ),
               ),
@@ -68,149 +76,209 @@ class FileManagerScreen extends ConsumerWidget {
           ),
         ],
       ),
-      body: state.loading
-          ? const Center(child: CircularProgressIndicator())
-          : RefreshIndicator(
-              onRefresh: () => ref
-                  .read(fileManagerViewModelProvider.notifier)
-                  .refresh(state.currentPath),
-              child: ListView(
-                children: [
-                  if (state.error != null)
-                    Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: Colors.red.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(8),
-                          border:
-                              Border.all(color: Colors.red.withOpacity(0.3)),
-                        ),
-                        child: Row(
-                          children: [
-                            const Icon(Icons.error, color: Colors.red),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                state.error!,
-                                style: const TextStyle(color: Colors.red),
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: RadialGradient(
+            center: Alignment.topRight,
+            radius: 1.5,
+            colors: [
+              Color(0xFF1A0033),
+              AppColors.darkBackground,
+            ],
+            stops: [0.1, 0.9],
+          ),
+        ),
+        child: state.loading
+            ? Center(
+                child: CircularProgressIndicator(
+                  color: AppColors.primaryLight,
+                  backgroundColor: AppColors.darkSurface,
+                ),
+              )
+            : RefreshIndicator(
+                backgroundColor: AppColors.darkSurface,
+                color: AppColors.primaryLight,
+                onRefresh: () => ref
+                    .read(fileManagerViewModelProvider.notifier)
+                    .refresh(state.currentPath),
+                child: ListView(
+                  children: [
+                    if (state.error != null)
+                      Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Colors.red.withOpacity(0.2),
+                            borderRadius: BorderRadius.circular(16),
+                            border:
+                                Border.all(color: Colors.red.withOpacity(0.4)),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.red.withOpacity(0.1),
+                                blurRadius: 10,
+                                spreadRadius: 1,
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(Icons.error, color: Colors.red[300]),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  state.error!,
+                                  style: TextStyle(color: Colors.red[300]),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
+                      ),
+
+                    // Connection info
+                    if (auth.credentials != null)
+                      Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Colors.green.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                                color: Colors.green.withOpacity(0.3)),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.green.withOpacity(0.2),
+                                blurRadius: 10,
+                                spreadRadius: 1,
+                              ),
+                            ],
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(Icons.cloud_done, color: Colors.green[300]),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  'Connected to ${auth.credentials!.hostname}:${auth.credentials!.port}',
+                                  style: TextStyle(color: Colors.green[300]),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+
+                    // Current path
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 20, vertical: 12),
+                      child: Text(
+                        'Path: ${state.currentPath}',
+                        style: const TextStyle(
+                            color: Colors.white70, fontSize: 12),
                       ),
                     ),
 
-                  // Connection info
-                  if (auth.credentials != null)
-                    Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: Colors.green.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(8),
-                          border:
-                              Border.all(color: Colors.green.withOpacity(0.3)),
-                        ),
-                        child: Row(
-                          children: [
-                            const Icon(Icons.cloud_done, color: Colors.green),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                'Connected to ${auth.credentials!.hostname}:${auth.credentials!.port}',
-                                style: const TextStyle(color: Colors.green),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-
-                  // Current path
-                  Padding(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    child: Text(
-                      'Path: ${state.currentPath}',
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                  ),
-
-                  // Folders list
-                  ...state.folders.map((f) => ListTile(
-                        leading: const Icon(Icons.folder, color: Colors.amber),
-                        title: Text(f.name),
-                        subtitle: Text('Folder • ${f.totalFiles} files'),
-                        onTap: () => context
-                            .go(RouteNames.folderBrowserPath(f.fullPath)),
-                        trailing: PopupMenuButton<String>(
-                          onSelected: (value) async {
-                            switch (value) {
-                              case 'delete':
-                                await _showDeleteFolderDialog(
-                                    context, ref, f.name, f.fullPath);
-                                break;
-                              case 'open':
-                                final url =
-                                    'https://project.ibartstech.com${f.fullPath}';
-                                final uri = Uri.parse(url);
-                                if (await canLaunchUrl(uri)) {
-                                  await launchUrl(uri);
+                    // Folders list
+                    ...state.folders.map((f) => Container(
+                          margin: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: AppColors.darkSurface.withOpacity(0.6),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                                color: AppColors.primaryLight.withOpacity(0.2)),
+                          ),
+                          child: ListTile(
+                            leading:
+                                Icon(Icons.folder, color: Colors.amber[300]),
+                            title: Text(f.name,
+                                style: const TextStyle(color: Colors.white)),
+                            subtitle: Text('Folder • ${f.totalFiles} files',
+                                style: const TextStyle(color: Colors.white70)),
+                            onTap: () => context
+                                .go(RouteNames.folderBrowserPath(f.fullPath)),
+                            trailing: PopupMenuButton<String>(
+                              icon: Icon(Icons.more_vert,
+                                  color: AppColors.primaryLight),
+                              onSelected: (value) async {
+                                switch (value) {
+                                  case 'delete':
+                                    await _showDeleteFolderDialog(
+                                        context, ref, f.name, f.fullPath);
+                                    break;
+                                  case 'open':
+                                    final url =
+                                        'https://project.ibartstech.com${f.fullPath}';
+                                    final uri = Uri.parse(url);
+                                    if (await canLaunchUrl(uri)) {
+                                      await launchUrl(uri);
+                                    }
+                                    break;
                                 }
-                                break;
-                            }
-                          },
-                          itemBuilder: (context) => [
-                            const PopupMenuItem(
-                              value: 'open',
-                              child: Row(
-                                children: [
-                                  Icon(Icons.open_in_browser),
-                                  SizedBox(width: 8),
-                                  Text('Open in browser'),
-                                ],
-                              ),
+                              },
+                              itemBuilder: (context) => [
+                                PopupMenuItem(
+                                  value: 'open',
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.open_in_browser,
+                                          color: AppColors.primaryLight),
+                                      const SizedBox(width: 8),
+                                      const Text('Open in browser',
+                                          style:
+                                              TextStyle(color: Colors.white)),
+                                    ],
+                                  ),
+                                ),
+                                PopupMenuItem(
+                                  value: 'delete',
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.delete,
+                                          color: Colors.red[300]),
+                                      const SizedBox(width: 8),
+                                      Text('Delete',
+                                          style: TextStyle(
+                                              color: Colors.red[300])),
+                                    ],
+                                  ),
+                                ),
+                              ],
                             ),
-                            const PopupMenuItem(
-                              value: 'delete',
-                              child: Row(
-                                children: [
-                                  Icon(Icons.delete, color: Colors.red),
-                                  SizedBox(width: 8),
-                                  Text('Delete',
-                                      style: TextStyle(color: Colors.red)),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      )),
+                          ),
+                        )),
 
-                  if (state.folders.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.all(24),
-                      child: Center(
-                        child: Column(
-                          children: [
-                            Icon(Icons.folder_open,
-                                size: 64, color: Colors.grey),
-                            SizedBox(height: 8),
-                            Text('No folders found'),
-                            SizedBox(height: 4),
-                            Text('Create a new folder or upload files'),
-                          ],
+                    if (state.folders.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.all(40),
+                        child: Center(
+                          child: Column(
+                            children: [
+                              Icon(Icons.folder_open,
+                                  size: 64, color: Colors.grey[400]),
+                              const SizedBox(height: 16),
+                              const Text('No folders found',
+                                  style: TextStyle(
+                                      color: Colors.white70, fontSize: 18)),
+                              const SizedBox(height: 8),
+                              const Text('Create a new folder or upload files',
+                                  style: TextStyle(color: Colors.white54)),
+                            ],
+                          ),
                         ),
                       ),
-                    ),
-                ],
+                  ],
+                ),
               ),
-            ),
+      ),
       floatingActionButton: FloatingActionButton(
         onPressed: () => _showCreateFolderDialog(context, ref),
-        child: const Icon(Icons.create_new_folder_outlined),
+        backgroundColor: AppColors.primary,
+        foregroundColor: Colors.white,
+        child: Icon(Icons.create_new_folder_outlined, color: Colors.white),
       ),
     );
   }
@@ -219,13 +287,17 @@ class FileManagerScreen extends ConsumerWidget {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Logout'),
+        backgroundColor: AppColors.darkSurface.withOpacity(0.9),
+        surfaceTintColor: Colors.transparent,
+        title: const Text('Logout', style: TextStyle(color: Colors.white)),
         content: const Text(
-            'Are you sure you want to logout? You will need to login again.'),
+            'Are you sure you want to logout? You will need to login again.',
+            style: TextStyle(color: Colors.white70)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
+            child:
+                const Text('Cancel', style: TextStyle(color: Colors.white70)),
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
@@ -253,22 +325,49 @@ class FileManagerScreen extends ConsumerWidget {
     final name = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Create Folder'),
+        backgroundColor: AppColors.darkSurface.withOpacity(0.9),
+        surfaceTintColor: Colors.transparent,
+        title:
+            const Text('Create Folder', style: TextStyle(color: Colors.white)),
         content: TextField(
           controller: nameController,
-          decoration: const InputDecoration(
+          style: const TextStyle(color: Colors.white),
+          decoration: InputDecoration(
             labelText: 'Folder name',
+            labelStyle: const TextStyle(color: Colors.white70),
             hintText: 'Enter folder name',
+            hintStyle: const TextStyle(color: Colors.white54),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide:
+                  BorderSide(color: AppColors.primaryLight.withOpacity(0.3)),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide:
+                  BorderSide(color: AppColors.primaryLight.withOpacity(0.3)),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(color: AppColors.primaryLight, width: 2),
+            ),
+            filled: true,
+            fillColor: AppColors.darkSurface.withOpacity(0.8),
           ),
           autofocus: true,
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
+            child:
+                const Text('Cancel', style: TextStyle(color: Colors.white70)),
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, nameController.text.trim()),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+            ),
             child: const Text('Create'),
           ),
         ],
@@ -285,6 +384,7 @@ class FileManagerScreen extends ConsumerWidget {
             SnackBar(
               content: Text('Folder "$name" created successfully'),
               backgroundColor: Colors.green,
+              behavior: SnackBarBehavior.floating,
             ),
           );
         }
@@ -294,6 +394,7 @@ class FileManagerScreen extends ConsumerWidget {
             SnackBar(
               content: Text('Failed to create folder: $e'),
               backgroundColor: Colors.red,
+              behavior: SnackBarBehavior.floating,
             ),
           );
         }
@@ -306,13 +407,18 @@ class FileManagerScreen extends ConsumerWidget {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Delete Folder'),
+        backgroundColor: AppColors.darkSurface.withOpacity(0.9),
+        surfaceTintColor: Colors.transparent,
+        title:
+            const Text('Delete Folder', style: TextStyle(color: Colors.white)),
         content: Text(
-            'Are you sure you want to delete "$folderName"?\n\nThis action cannot be undone and will delete all contents.'),
+            'Are you sure you want to delete "$folderName"?\n\nThis action cannot be undone and will delete all contents.',
+            style: const TextStyle(color: Colors.white70)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
+            child:
+                const Text('Cancel', style: TextStyle(color: Colors.white70)),
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
@@ -334,6 +440,7 @@ class FileManagerScreen extends ConsumerWidget {
             SnackBar(
               content: Text('Folder "$folderName" deleted successfully'),
               backgroundColor: Colors.green,
+              behavior: SnackBarBehavior.floating,
             ),
           );
           // Refresh the current view
@@ -347,6 +454,7 @@ class FileManagerScreen extends ConsumerWidget {
             SnackBar(
               content: Text('Failed to delete folder: $e'),
               backgroundColor: Colors.red,
+              behavior: SnackBarBehavior.floating,
             ),
           );
         }
