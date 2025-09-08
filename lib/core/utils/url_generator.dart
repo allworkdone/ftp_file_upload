@@ -1,5 +1,19 @@
 class UrlGenerator {
-  static const String _baseUrl = 'https://project.ibartstech.com';
+  static const String _defaultBaseUrl = 'https://project.ibartstech.com';
+
+  String _baseUrl;
+
+  UrlGenerator({String? baseUrl}) : _baseUrl = baseUrl ?? _defaultBaseUrl;
+
+  /// Update the base URL
+  void updateBaseUrl(String newBaseUrl) {
+    _baseUrl = newBaseUrl.endsWith('/')
+        ? newBaseUrl.substring(0, newBaseUrl.length - 1)
+        : newBaseUrl;
+  }
+
+  /// Get current base URL
+  String get baseUrl => _baseUrl;
 
   /// Generate download URL for uploaded file
   String generateFileUrl(String folderPath, String fileName) {

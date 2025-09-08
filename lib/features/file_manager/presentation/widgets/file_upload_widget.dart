@@ -355,7 +355,7 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
 
       final link = getIt<GenerateLinkUsecase>()
           .fileUrl(folder.replaceFirst(RegExp('^/'), ''), fileName);
-      setState(() => _link = link);
+      setState(() async => _link = await link);
       _showSnackBar('Upload completed: $fileName', Colors.green);
     } catch (e) {
       setState(() => _error = e.toString());
@@ -396,7 +396,10 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
           mainAxisSize: MainAxisSize.min,
           children: [
             if (_isProcessingBundle) ...[
-              CircularProgressIndicator(color: AppColors.primaryLight, year2023: false,),
+              CircularProgressIndicator(
+                color: AppColors.primaryLight,
+                year2023: false,
+              ),
               const SizedBox(height: 16),
               const Text('Converting directory to zip...',
                   style: TextStyle(color: Colors.white70)),

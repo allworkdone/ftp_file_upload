@@ -15,6 +15,7 @@ class AppSettings extends Equatable {
   final int maxHistoryDays;
   final bool requireWifiForUpload;
   final bool enableAutoBackup;
+  final String baseDownloadUrl; // New field
 
   const AppSettings({
     this.themeMode = ThemeMode.system,
@@ -27,6 +28,7 @@ class AppSettings extends Equatable {
     this.maxHistoryDays = 30,
     this.requireWifiForUpload = false,
     this.enableAutoBackup = false,
+    this.baseDownloadUrl = 'https://project.ibartstech.com', // Default URL
   });
 
   AppSettings copyWith({
@@ -40,6 +42,7 @@ class AppSettings extends Equatable {
     int? maxHistoryDays,
     bool? requireWifiForUpload,
     bool? enableAutoBackup,
+    String? baseDownloadUrl, // New parameter
   }) {
     return AppSettings(
       themeMode: themeMode ?? this.themeMode,
@@ -53,20 +56,22 @@ class AppSettings extends Equatable {
       maxHistoryDays: maxHistoryDays ?? this.maxHistoryDays,
       requireWifiForUpload: requireWifiForUpload ?? this.requireWifiForUpload,
       enableAutoBackup: enableAutoBackup ?? this.enableAutoBackup,
+      baseDownloadUrl: baseDownloadUrl ?? this.baseDownloadUrl, // New field
     );
   }
 
   @override
   List<Object?> get props => [
-    themeMode,
-    enableNotifications,
-    autoDeleteAfterUpload,
-    maxConcurrentUploads,
-    uploadQuality,
-    compressImages,
-    keepUploadHistory,
-    maxHistoryDays,
-    requireWifiForUpload,
-    enableAutoBackup,
-  ];
+        themeMode,
+        enableNotifications,
+        autoDeleteAfterUpload,
+        maxConcurrentUploads,
+        uploadQuality,
+        compressImages,
+        keepUploadHistory,
+        maxHistoryDays,
+        requireWifiForUpload,
+        enableAutoBackup,
+        baseDownloadUrl, // New prop
+      ];
 }

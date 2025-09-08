@@ -1,3 +1,4 @@
+import 'package:file_upload/features/file_manager/domain/usecases/generate_link_usecase.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -47,7 +48,7 @@ class FileManagerScreen extends ConsumerWidget {
                   await _showLogoutDialog(context, ref);
                   break;
                 case 'settings':
-                  context.go(RouteNames.connectionSetup);
+                  context.push(RouteNames.settings);
                   break;
               }
             },
@@ -212,8 +213,10 @@ class FileManagerScreen extends ConsumerWidget {
                                         context, ref, f.name, f.fullPath);
                                     break;
                                   case 'open':
-                                    final url =
-                                        'https://project.ibartstech.com${f.fullPath}';
+                                    final generateLinkUsecase =
+                                        getIt<GenerateLinkUsecase>();
+                                    final url = await generateLinkUsecase
+                                        .folderUrl(f.fullPath);
                                     final uri = Uri.parse(url);
                                     if (await canLaunchUrl(uri)) {
                                       await launchUrl(uri);

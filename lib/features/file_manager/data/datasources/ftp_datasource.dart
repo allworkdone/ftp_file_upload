@@ -37,7 +37,10 @@ class FTPDatasourceImpl implements FTPDatasource {
     // Force binary transfer when available to avoid corruption
     try {
       await (ftp as dynamic).setTransferType(TransferType.binary);
-    } catch (_) {}
+    } catch (e) {
+      print('Failed to set binary transfer type: $e');
+      // Optionally re-throw or handle more explicitly if this is critical
+    }
     return ftp;
   }
 
@@ -201,6 +204,14 @@ class FTPDatasourceImpl implements FTPDatasource {
     try {
       await ftpConnect.connect();
 
+      // Ensure binary transfer type for reliable downloads
+      try {
+        await (ftpConnect as dynamic).setTransferType(TransferType.binary);
+      } catch (e) {
+        print('Failed to set binary transfer type for download: $e');
+        // Continue with download even if setting binary fails, but log it.
+      }
+
       // Extract filename from remote path
       final fileName = remoteFilePath.split('/').last;
       final localFilePath = '$localDirectoryPath/$fileName';
@@ -211,26 +222,32 @@ class FTPDatasourceImpl implements FTPDatasource {
       // Ensure parent directory exists
       await localFile.parent.create(recursive: true);
 
+      print('Attempting to download $remoteFilePath to $localFilePath');
+
       // Download the file
       final downloaded =
           await ftpConnect.downloadFile(remoteFilePath, localFile);
 
       if (!downloaded) {
+        print('FTPConnect.downloadFile returned false for $remoteFilePath');
         throw Exception('Failed to download file');
       }
 
+      print('Successfully downloaded $remoteFilePath to $localFilePath');
       return localFilePath;
     } catch (e) {
+      print('Error during file download: $e');
       throw Exception('Failed to download file: $e');
     } finally {
       try {
         await ftpConnect.disconnect();
       } catch (e) {
-        print('Error disconnecting: $e');
+        print('Error disconnecting FTP client after download: $e');
       }
     }
   }
 
+  @override
   Future<String> downloadFileWithRetry(FTPCredentials credentials,
       String remoteFilePath, String localDirectoryPath,
       {int maxRetries = 3}) async {
@@ -242,6 +259,7 @@ class FTPDatasourceImpl implements FTPDatasource {
             credentials, remoteFilePath, localDirectoryPath);
       } catch (e) {
         lastException = e is Exception ? e : Exception(e.toString());
+        print('Download attempt $attempt failed: $e');
         if (attempt < maxRetries) {
           // Wait before retry (exponential backoff)
           await Future.delayed(Duration(seconds: attempt * 2));

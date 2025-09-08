@@ -155,7 +155,10 @@ Future<void> configureDependencies() async {
   );
 
   getIt.registerLazySingleton<GenerateLinkUsecase>(
-    () => GenerateLinkUsecase(getIt<UrlGenerator>()),
+    () => GenerateLinkUsecase(
+      getIt<UrlGenerator>(),
+      getIt<GetSettingsUsecase>(),
+    ),
   );
 
   // Upload History feature
