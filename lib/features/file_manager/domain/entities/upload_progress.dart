@@ -1,4 +1,6 @@
 import 'package:equatable/equatable.dart';
+import 'package:file_upload/core/di/injection.dart';
+import 'package:file_upload/features/file_manager/domain/usecases/generate_link_usecase.dart';
 
 enum UploadStatus { pending, uploading, completed, failed, cancelled }
 
@@ -13,7 +15,7 @@ class UploadProgress extends Equatable {
   final DateTime startTime;
   final DateTime? endTime;
 
-  const UploadProgress({
+  UploadProgress({
     required this.fileName,
     required this.filePath,
     required this.targetFolderPath,
@@ -67,23 +69,27 @@ class UploadProgress extends Equatable {
     return null;
   }
 
-  String get targetUrl {
-    final cleanFolderPath = targetFolderPath.isEmpty
-        ? ''
-        : '$targetFolderPath/';
-    return 'https://project.ibartstech.com/$cleanFolderPath$fileName';
-  }
+  // String get targetUrl {
+  //   final cleanFolderPath = targetFolderPath.isEmpty
+  //       ? ''
+  //       : '$targetFolderPath/';
+  //   return 'https://project.ibartstech.com/$cleanFolderPath$fileName';
+  // }
+  final generateLinkUsecase = getIt<GenerateLinkUsecase>();
+
+  Future<String> get url async =>
+      generateLinkUsecase.fileUrl(targetFolderPath, fileName);
 
   @override
   List<Object?> get props => [
-    fileName,
-    filePath,
-    targetFolderPath,
-    totalBytes,
-    uploadedBytes,
-    status,
-    errorMessage,
-    startTime,
-    endTime,
-  ];
+        fileName,
+        filePath,
+        targetFolderPath,
+        totalBytes,
+        uploadedBytes,
+        status,
+        errorMessage,
+        startTime,
+        endTime,
+      ];
 }
