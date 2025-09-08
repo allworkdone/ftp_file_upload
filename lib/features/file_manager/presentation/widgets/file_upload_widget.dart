@@ -355,7 +355,8 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
 
       final link = getIt<GenerateLinkUsecase>()
           .fileUrl(folder.replaceFirst(RegExp('^/'), ''), fileName);
-      setState(() async => _link = await link);
+      final generatedLink = await link;
+      setState(() => _link = generatedLink);
       _showSnackBar('Upload completed: $fileName', Colors.green);
     } catch (e) {
       setState(() => _error = e.toString());
