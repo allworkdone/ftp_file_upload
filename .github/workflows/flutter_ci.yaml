@@ -2,41 +2,59 @@ name: Flutter CI/CD Pipeline
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [main, develop]
   pull_request:
-    branches: [ main ]
+    branches: [main]
   workflow_dispatch:
     inputs:
       build_platforms:
-        description: 'Select platforms to build'
+        description: "Select platforms to build"
         required: true
-        default: 'android,ios,macos,windows'
+        default: "android,ios,macos,windows"
         type: choice
         options:
-          - 'android'
-          - 'ios'
-          - 'macos'
-          - 'windows'
-          - 'android,ios'
-          - 'android,macos'
-          - 'android,windows'
-          - 'ios,macos'
-          - 'ios,windows'
-          - 'macos,windows'
-          - 'android,ios,macos'
-          - 'android,ios,windows'
-          - 'android,macos,windows'
-          - 'ios,macos,windows'
-          - 'android,ios,macos,windows'
+          - "android"
+          - "ios"
+          - "macos"
+          - "windows"
+          - "android,ios"
+          - "android,macos"
+          - "android,windows"
+          - "ios,macos"
+          - "ios,windows"
+          - "macos,windows"
+          - "android,ios,macos"
+          - "android,ios,windows"
+          - "android,macos,windows"
+          - "ios,macos,windows"
+          - "android,ios,macos,windows"
+      runner_type:
+        description: "Select runner type"
+        required: true
+        default: "github-hosted"
+        type: choice
+        options:
+          - "github-hosted"
+          - "self-hosted"
+      release_channel:
+        description: "Select Flutter release channel"
+        required: false
+        default: "stable"
+        type: choice
+        options:
+          - "stable"
+          - "beta"
+          - "dev"
+          - "master"
 
 env:
-  FLUTTER_VERSION: '3.35.3'
+  FLUTTER_VERSION: "3.35.3"
 
 jobs:
   # Test and analyze code quality
   test:
     name: Test & Code Analysis
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.event.inputs.runner_type == 'self-hosted' && 'self-hosted' || 'ubuntu-latest' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -45,7 +63,7 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
-          channel: 'stable'
+          channel: ${{ github.event.inputs.release_channel || 'stable' }}
           cache: true
 
       - name: Get dependencies
@@ -68,7 +86,7 @@ jobs:
   # Android Build
   build-android:
     name: Build Android
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.event.inputs.runner_type == 'self-hosted' && 'self-hosted' || 'ubuntu-latest' }}
     needs: test
     if: contains(github.event.inputs.build_platforms || 'android,ios,macos,windows', 'android')
     steps:
@@ -78,14 +96,14 @@ jobs:
       - name: Setup Java
         uses: actions/setup-java@v3
         with:
-          distribution: 'zulu'
-          java-version: '17'
+          distribution: "zulu"
+          java-version: "17"
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
-          channel: 'stable'
+          channel: ${{ github.event.inputs.release_channel || 'stable' }}
           cache: true
 
       - name: Get dependencies
@@ -112,7 +130,7 @@ jobs:
   # iOS Build with xarchive
   build-ios:
     name: Build iOS
-    runs-on: macos-14
+    runs-on: ${{ github.event.inputs.runner_type == 'self-hosted' && 'self-hosted' || 'macos-14' }}
     needs: test
     if: contains(github.event.inputs.build_platforms || 'android,ios,macos,windows', 'ios')
     steps:
@@ -123,7 +141,7 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
-          channel: 'stable'
+          channel: ${{ github.event.inputs.release_channel || 'stable' }}
           cache: true
 
       - name: Get dependencies
@@ -165,7 +183,7 @@ jobs:
   # macOS Build
   build-macos:
     name: Build macOS
-    runs-on: macos-14
+    runs-on: ${{ github.event.inputs.runner_type == 'self-hosted' && 'self-hosted' || 'macos-14' }}
     needs: test
     if: contains(github.event.inputs.build_platforms || 'android,ios,macos,windows', 'macos')
     steps:
@@ -176,7 +194,7 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
-          channel: 'stable'
+          channel: ${{ github.event.inputs.release_channel || 'stable' }}
           cache: true
 
       - name: Enable macOS desktop
@@ -203,7 +221,7 @@ jobs:
   # Windows Build
   build-windows:
     name: Build Windows
-    runs-on: windows-latest
+    runs-on: ${{ github.event.inputs.runner_type == 'self-hosted' && 'self-hosted' || 'windows-latest' }}
     needs: test
     if: contains(github.event.inputs.build_platforms || 'android,ios,macos,windows', 'windows')
     steps:
@@ -214,7 +232,7 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
-          channel: 'stable'
+          channel: ${{ github.event.inputs.release_channel || 'stable' }}
           cache: true
 
       - name: Enable Windows desktop
@@ -241,14 +259,15 @@ jobs:
   # Deploy job (optional)
   deploy:
     name: Deploy
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.event.inputs.runner_type == 'self-hosted' && 'self-hosted' || 'ubuntu-latest' }}
     needs: [build-android, build-ios, build-macos, build-windows]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     steps:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
 
       - name: Deploy to Firebase App Distribution (Android)
+        if: contains(github.event.inputs.build_platforms || 'android,ios,macos,windows', 'android')
         uses: wzieba/Firebase-Distribution-Github-Action@v1
         with:
           appId: ${{ secrets.FIREBASE_ANDROID_APP_ID }}
@@ -257,6 +276,7 @@ jobs:
           file: android-apk/app-release.apk
 
       - name: Deploy to TestFlight (iOS)
+        if: contains(github.event.inputs.build_platforms || 'android,ios,macos,windows', 'ios')
         # You would need to set up App Store Connect API for this
         run: |
           echo "Deploy to TestFlight"
