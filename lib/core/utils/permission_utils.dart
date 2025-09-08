@@ -1,25 +1,40 @@
 import 'package:permission_handler/permission_handler.dart' as perm;
 import 'package:permission_handler/permission_handler.dart';
+import 'package:device_info_plus/device_info_plus.dart';
 import 'dart:io';
 import 'app_logger.dart';
 
 class PermissionUtils {
-  /// Request storage permissions
+  /// Request storage permissions (updated for modern Android)
   Future<bool> requestStoragePermission() async {
     try {
       if (Platform.isAndroid) {
-        // For Android 13+ (API 33+), we need different permissions
-        if (await _isAndroid13OrHigher()) {
-          final status = await perm.Permission.manageExternalStorage.request();
+        final androidVersion = await _getAndroidApiLevel();
+
+        if (androidVersion >= 33) {
+          // Android 13+ (API 33+): Use granular media permissions
+          final results = await [
+            perm.Permission.photos,
+            perm.Permission.videos,
+            perm.Permission.audio,
+          ].request();
+
+          // Check if at least one media permission is granted
+          return results.values.any((status) => status.isGranted);
+        } else if (androidVersion >= 30) {
+          // Android 11-12 (API 30-32): Request storage permission
+          // MANAGE_EXTERNAL_STORAGE cannot be requested via normal flow
+          final status = await perm.Permission.storage.request();
           return status.isGranted;
         } else {
-          // For older Android versions
+          // Android 10 and below (API < 30)
           final status = await perm.Permission.storage.request();
           return status.isGranted;
         }
       } else if (Platform.isIOS) {
-        // iOS doesn't require explicit storage permission for app documents
-        return true;
+        // iOS: Request photos permission
+        final status = await perm.Permission.photos.request();
+        return status.isGranted;
       } else {
         // Desktop platforms don't require permission
         return true;
@@ -34,15 +49,31 @@ class PermissionUtils {
   Future<bool> hasStoragePermission() async {
     try {
       if (Platform.isAndroid) {
-        if (await _isAndroid13OrHigher()) {
-          final status = await Permission.manageExternalStorage.status;
+        final androidVersion = await _getAndroidApiLevel();
+
+        if (androidVersion >= 33) {
+          // Android 13+: Check granular media permissions
+          final photoStatus = await perm.Permission.photos.status;
+          final videoStatus = await perm.Permission.videos.status;
+          final audioStatus = await perm.Permission.audio.status;
+
+          return photoStatus.isGranted ||
+              videoStatus.isGranted ||
+              audioStatus.isGranted;
+        } else if (androidVersion >= 30) {
+          // Android 11-12: Check storage permission
+          final status = await perm.Permission.storage.status;
           return status.isGranted;
         } else {
-          final status = await Permission.storage.status;
+          // Android 10 and below
+          final status = await perm.Permission.storage.status;
           return status.isGranted;
         }
+      } else if (Platform.isIOS) {
+        final status = await perm.Permission.photos.status;
+        return status.isGranted;
       } else {
-        return true; // iOS and desktop don't need explicit permission
+        return true; // Desktop platforms don't need explicit permission
       }
     } catch (e) {
       AppLogger.error('Error checking storage permission', e);
@@ -50,7 +81,7 @@ class PermissionUtils {
     }
   }
 
-  /// Request camera permission (for taking photos to upload)
+  /// Request camera permission
   Future<bool> requestCameraPermission() async {
     try {
       final status = await perm.Permission.camera.request();
@@ -81,37 +112,48 @@ class PermissionUtils {
     }
   }
 
-  /// Check if Android version is 13 or higher
-  Future<bool> _isAndroid13OrHigher() async {
-    if (!Platform.isAndroid) return false;
+  /// Get Android API level
+  Future<int> _getAndroidApiLevel() async {
+    if (!Platform.isAndroid) return 0;
 
-    // This is a simplified check. In a real app, you might want to use
-    // device_info_plus package for more accurate version detection
     try {
-      final result = await Process.run('getprop', ['ro.build.version.sdk']);
-      final sdkVersion = int.tryParse(result.stdout.toString().trim()) ?? 0;
-      return sdkVersion >= 33; // Android 13 is API level 33
+      final deviceInfo = DeviceInfoPlugin();
+      final androidInfo = await deviceInfo.androidInfo;
+      return androidInfo.version.sdkInt;
     } catch (e) {
-      AppLogger.error('Error checking Android version', e);
-      return false;
+      AppLogger.error('Error getting Android API level', e);
+      return 0;
     }
   }
 
-  /// Request all necessary permissions at once
-  Future<Map<perm.Permission, perm.PermissionStatus>> requestAllPermissions() async {
+  /// Request appropriate permissions based on Android version
+  Future<Map<perm.Permission, perm.PermissionStatus>>
+      requestAllPermissions() async {
     final permissions = <perm.Permission>[];
 
     if (Platform.isAndroid) {
-      if (await _isAndroid13OrHigher()) {
+      final androidVersion = await _getAndroidApiLevel();
+
+      if (androidVersion >= 33) {
+        // Android 13+: Request granular media permissions
         permissions.addAll([
-          perm.Permission.manageExternalStorage,
+          perm.Permission.photos,
+          perm.Permission.videos,
+          perm.Permission.audio,
           perm.Permission.camera,
         ]);
       } else {
-        permissions.addAll([perm.Permission.storage, perm.Permission.camera]);
+        // Android 12 and below
+        permissions.addAll([
+          perm.Permission.storage,
+          perm.Permission.camera,
+        ]);
       }
     } else if (Platform.isIOS) {
-      permissions.addAll([perm.Permission.photos, perm.Permission.camera]);
+      permissions.addAll([
+        perm.Permission.photos,
+        perm.Permission.camera,
+      ]);
     }
 
     if (permissions.isEmpty) {
@@ -123,6 +165,23 @@ class PermissionUtils {
     } catch (e) {
       AppLogger.error('Error requesting permissions', e);
       return {};
+    }
+  }
+
+  /// Check if we need to show rationale for permissions
+  Future<bool> shouldShowStoragePermissionRationale() async {
+    if (!Platform.isAndroid) return false;
+
+    try {
+      final androidVersion = await _getAndroidApiLevel();
+
+      if (androidVersion >= 33) {
+        return await perm.Permission.photos.shouldShowRequestRationale;
+      } else {
+        return await perm.Permission.storage.shouldShowRequestRationale;
+      }
+    } catch (e) {
+      return false;
     }
   }
 }

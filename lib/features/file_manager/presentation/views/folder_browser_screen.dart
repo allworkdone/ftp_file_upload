@@ -1,6 +1,11 @@
+import 'dart:async';
 import 'dart:io' show Directory, File, Platform;
 
+import 'package:device_info_plus/device_info_plus.dart';
 import 'package:file_saver/file_saver.dart';
+import 'package:file_upload/core/utils/app_logger.dart';
+import 'package:file_upload/core/utils/permission_utils.dart';
+import 'package:file_upload/features/authentication/domain/entities/ftp_credentials.dart';
 import 'package:file_upload/features/authentication/presentation/viewmodels/auth_viewmodel.dart';
 import 'package:file_upload/features/file_manager/data/datasources/ftp_datasource.dart';
 import 'package:file_upload/features/file_manager/domain/usecases/generate_link_usecase.dart';
@@ -8,6 +13,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:path/path.dart' as path;
+import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -35,6 +42,9 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
   List<FTPFolder> _folders = const [];
   List<FTPFile> _files = const [];
   String? _error;
+  double _downloadProgress = 0.0;
+  bool _isDownloading = false;
+  String _downloadingFileName = '';
 
   @override
   void initState() {
@@ -115,55 +125,794 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
     );
   }
 
+// Show rationale dialog explaining why permission is needed
+  Future<bool> _showPermissionRationaleDialog() async {
+    return await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            backgroundColor: AppColors.darkSurface.withOpacity(0.9),
+            surfaceTintColor: Colors.transparent,
+            title: const Text(
+              'Storage Access Needed',
+              style: TextStyle(color: Colors.white),
+            ),
+            content: const Text(
+              'This app needs access to your device storage to download and save files. This allows you to access downloaded files from your file manager.',
+              style: TextStyle(color: Colors.white70),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text(
+                  'Cancel',
+                  style: TextStyle(color: Colors.white70),
+                ),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('Grant Permission'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+  }
+
+  Future<bool> _showPermissionDeniedDialog() async {
+    return await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            backgroundColor: AppColors.darkSurface.withOpacity(0.9),
+            surfaceTintColor: Colors.transparent,
+            title: const Text(
+              'Permission Required',
+              style: TextStyle(color: Colors.white),
+            ),
+            content: const Text(
+              'Storage permission was denied. To download files, please enable storage/media permissions in app settings.\n\nGo to: Settings > Apps > [Your App Name] > Permissions',
+              style: TextStyle(color: Colors.white70),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text(
+                  'Cancel',
+                  style: TextStyle(color: Colors.white70),
+                ),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('Open Settings'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+  }
+
   Future<void> _downloadFile(FTPFile file) async {
     try {
-      // Request storage permission for Android
+      // Reset progress
+      setState(() {
+        _downloadProgress = 0.0;
+        _isDownloading = true;
+        _downloadingFileName = file.name;
+      });
+
+      // For Android, check and request appropriate permissions
       if (Platform.isAndroid) {
-        final status = await Permission.storage.request();
-        if (status.isDenied) {
-          _showSnackBar('Storage permission denied', isSuccess: false);
-          return;
+        final permissionUtils = PermissionUtils();
+
+        final hasPermission = await permissionUtils.hasStoragePermission();
+
+        if (!hasPermission) {
+          final shouldShowRationale =
+              await permissionUtils.shouldShowStoragePermissionRationale();
+
+          if (shouldShowRationale) {
+            final userWantsToGrant = await _showPermissionRationaleDialog();
+            if (!userWantsToGrant) {
+              setState(() => _isDownloading = false);
+              return;
+            }
+          }
+
+          final granted = await permissionUtils.requestStoragePermission();
+
+          if (!granted) {
+            setState(() => _isDownloading = false);
+            _showSnackBar('Storage permission is required to download files',
+                isSuccess: false);
+
+            final shouldOpenSettings = await _showPermissionDeniedDialog();
+            if (shouldOpenSettings) {
+              await permissionUtils.openAppSettings();
+            }
+            return;
+          }
         }
       }
 
-      _showSnackBar('Downloading "${file.name}"...', showProgress: true);
+      // Update progress to 10%
+      setState(() => _downloadProgress = 0.1);
+      _showSnackBar('Starting download of "${file.name}"...',
+          showProgress: false);
 
       // Get credentials from auth
       final auth = ref.read(authViewModelProvider);
       if (auth.credentials == null) {
+        setState(() => _isDownloading = false);
         _showSnackBar('No FTP credentials available', isSuccess: false);
         return;
       }
 
-      // Use FTP datasource instead of HTTP
+      // Update progress to 20%
+      setState(() => _downloadProgress = 0.2);
+
+      // Use FTP datasource with progress callback
       final ftpDatasource = getIt<FTPDatasource>();
 
       // Get temporary directory for download
       final tempDir = Directory.systemTemp;
       final tempPath = tempDir.path;
 
-      // Download file via FTP
-      final localFilePath = await ftpDatasource.downloadFile(
-          auth.credentials!, file.fullPath, tempPath);
+      // Update progress to 30%
+      setState(() => _downloadProgress = 0.3);
 
-      // Read the downloaded file and save it properly
+      // Download file via FTP to temp location with progress tracking
+      final localFilePath = await _downloadFileWithProgress(
+        ftpDatasource,
+        auth.credentials!,
+        file.fullPath,
+        tempPath,
+        file.size ?? 0,
+      );
+
+      // Progress is now at 80% from download
+      setState(() => _downloadProgress = 0.85);
+
+      // Read the downloaded file
       final downloadedFile = File(localFilePath);
       final bytes = await downloadedFile.readAsBytes();
 
-      // Save to user's downloads/documents
-      await FileSaver.instance.saveFile(
-        name: file.name,
-        bytes: bytes,
-        fileExtension: file.extension ?? '',
-        mimeType: _getMimeType(file.extension),
-      );
+      // Update progress to 90%
+      setState(() => _downloadProgress = 0.9);
 
-      // Clean up temp file
-      await downloadedFile.delete();
+      // Save to Downloads folder using the improved method
+      final savedFilePath = await _saveToDownloads(file.name, bytes);
 
-      _showSnackBar('File downloaded successfully!', isSuccess: true);
+      // Update progress to 95%
+      setState(() => _downloadProgress = 0.95);
+
+      if (savedFilePath != null) {
+        // Clean up temp file
+        try {
+          await downloadedFile.delete();
+        } catch (e) {
+          AppLogger.error('Could not clean up temp file', e);
+        }
+
+        // Complete progress
+        setState(() => _downloadProgress = 1.0);
+
+        // Small delay to show 100%
+        await Future.delayed(Duration(milliseconds: 500));
+
+        setState(() => _isDownloading = false);
+
+        _showSnackBar('Download completed successfully!', isSuccess: true);
+
+        // Show download complete dialog
+        _showDownloadCompleteDialog(savedFilePath);
+      } else {
+        throw Exception('Failed to save file to Downloads folder');
+      }
     } catch (e) {
-      _showSnackBar('Download failed: $e', isSuccess: false);
+      setState(() => _isDownloading = false);
+      AppLogger.error('Download failed', e);
+      _showSnackBar('Download failed: ${e.toString()}', isSuccess: false);
+    }
+  }
+
+// Modified FTP download with progress tracking
+  Future<String> _downloadFileWithProgress(
+    FTPDatasource ftpDatasource,
+    FTPCredentials credentials,
+    String remotePath,
+    String localDir,
+    int fileSize,
+  ) async {
+    // This is a wrapper that simulates progress for FTP download
+    // You'll need to modify your FTPDatasource to support progress callbacks
+
+    final completer = Completer<String>();
+
+    // Start the actual download
+    ftpDatasource.downloadFile(credentials, remotePath, localDir).then((path) {
+      setState(() => _downloadProgress = 0.8);
+      completer.complete(path);
+    }).catchError((error) {
+      completer.completeError(error);
+    });
+
+    // Simulate progress updates during download (you can replace this with actual FTP progress)
+    Timer.periodic(Duration(milliseconds: 200), (timer) {
+      if (completer.isCompleted) {
+        timer.cancel();
+        return;
+      }
+
+      if (_downloadProgress < 0.75) {
+        setState(() => _downloadProgress += 0.05);
+      }
+    });
+
+    return completer.future;
+  }
+
+// Widget to show download progress
+  Widget _buildDownloadProgress() {
+    if (!_isDownloading) return SizedBox.shrink();
+
+    return Container(
+      margin: EdgeInsets.all(16),
+      padding: EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.darkSurface.withOpacity(0.9),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.primary.withOpacity(0.3)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.download, color: AppColors.primary, size: 24),
+              SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Downloading $_downloadingFileName',
+                  style: TextStyle(
+                      color: Colors.white, fontWeight: FontWeight.w500),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+          SizedBox(height: 12),
+          Column(
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    '${(_downloadProgress * 100).toInt()}%',
+                    style: TextStyle(
+                      color: AppColors.primary,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                    ),
+                  ),
+                  Text(
+                    _getProgressText(),
+                    style: TextStyle(color: Colors.white70, fontSize: 12),
+                  ),
+                ],
+              ),
+              SizedBox(height: 8),
+              LinearProgressIndicator(
+                value: _downloadProgress,
+                backgroundColor: Colors.white24,
+                valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
+                minHeight: 6,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _getProgressText() {
+    if (_downloadProgress < 0.1) return 'Initializing...';
+    if (_downloadProgress < 0.3) return 'Connecting...';
+    if (_downloadProgress < 0.8) return 'Downloading...';
+    if (_downloadProgress < 0.9) return 'Saving file...';
+    if (_downloadProgress < 1.0) return 'Finalizing...';
+    return 'Complete!';
+  }
+
+// Save file to Downloads folder with proper accessibility
+  Future<String?> _saveToDownloads(String fileName, List<int> bytes) async {
+    try {
+      Directory? downloadsDir;
+
+      if (Platform.isAndroid) {
+        // Try multiple approaches for Android
+
+        // Method 1: Try to get Downloads directory directly
+        try {
+          downloadsDir = Directory('/storage/emulated/0/Download');
+          if (!await downloadsDir.exists()) {
+            downloadsDir = Directory('/storage/emulated/0/Downloads');
+          }
+        } catch (e) {
+          AppLogger.error('Could not access Downloads via direct path', e);
+        }
+
+        // Method 2: Use path_provider as fallback
+        if (downloadsDir == null || !await downloadsDir.exists()) {
+          try {
+            downloadsDir = await getDownloadsDirectory();
+          } catch (e) {
+            AppLogger.error(
+                'Could not get Downloads directory via path_provider', e);
+          }
+        }
+
+        // Method 3: Use external storage directory as final fallback
+        if (downloadsDir == null || !await downloadsDir.exists()) {
+          try {
+            final externalDir = await getExternalStorageDirectory();
+            if (externalDir != null) {
+              downloadsDir =
+                  Directory(path.join(externalDir.path, 'Downloads'));
+              await downloadsDir.create(recursive: true);
+            }
+          } catch (e) {
+            AppLogger.error(
+                'Could not create Downloads in external storage', e);
+          }
+        }
+      } else if (Platform.isIOS) {
+        // For iOS, use Documents directory
+        downloadsDir = await getApplicationDocumentsDirectory();
+      } else {
+        // For desktop, use Downloads directory
+        downloadsDir = await getDownloadsDirectory();
+      }
+
+      if (downloadsDir == null) {
+        throw Exception('Could not determine downloads directory');
+      }
+
+      // Ensure the directory exists
+      if (!await downloadsDir.exists()) {
+        await downloadsDir.create(recursive: true);
+      }
+
+      // Create unique filename if file already exists
+      String finalFileName = fileName;
+      int counter = 1;
+
+      while (await File(path.join(downloadsDir.path, finalFileName)).exists()) {
+        final nameWithoutExt = path.basenameWithoutExtension(fileName);
+        final extension = path.extension(fileName);
+        finalFileName = '${nameWithoutExt}_$counter$extension';
+        counter++;
+      }
+
+      // Save the file
+      final filePath = path.join(downloadsDir.path, finalFileName);
+      final file = File(filePath);
+      await file.writeAsBytes(bytes);
+
+      // For Android, try to make the file visible in media scanner
+      if (Platform.isAndroid) {
+        await _notifyMediaScanner(filePath);
+      }
+
+      return filePath;
+    } catch (e) {
+      AppLogger.error('Error saving file to Downloads', e);
+
+      // Final fallback: try using FileSaver
+      try {
+        await FileSaver.instance.saveFile(
+          name: fileName,
+          bytes: Uint8List.fromList(bytes),
+          fileExtension: path.extension(fileName).replaceFirst('.', ''),
+          mimeType: _getMimeType(path.extension(fileName)),
+        );
+        return 'FileSaver location'; // We don't know exact path with FileSaver
+      } catch (e2) {
+        AppLogger.error('FileSaver fallback also failed', e2);
+        return null;
+      }
+    }
+  }
+
+// Notify Android's MediaScanner about the new file
+  Future<void> _notifyMediaScanner(String filePath) async {
+    try {
+      if (Platform.isAndroid) {
+        // Use platform channel to scan the file
+        const platform = MethodChannel('com.allworkdone.upflow.media_scanner');
+        await platform.invokeMethod('scanFile', {'path': filePath});
+      }
+    } catch (e) {
+      // Ignore media scanner errors - file is still saved
+      AppLogger.error('Could not notify media scanner', e);
+    }
+  }
+
+// Show dialog with download location
+  _showDownloadCompleteDialog(String filePath) async {
+    await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppColors.darkSurface.withOpacity(0.9),
+        surfaceTintColor: Colors.transparent,
+        title: Row(
+          children: [
+            Icon(Icons.check_circle, color: Colors.green, size: 28),
+            SizedBox(width: 12),
+            Text(
+              'Download Complete',
+              style: TextStyle(color: Colors.white),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'File saved successfully!',
+              style: TextStyle(color: Colors.white70, fontSize: 16),
+            ),
+            SizedBox(height: 16),
+            Container(
+              padding: EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.primary.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: AppColors.primary.withOpacity(0.3)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.folder, color: AppColors.primary, size: 20),
+                      SizedBox(width: 8),
+                      Text(
+                        'Location:',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    'Downloads folder',
+                    style: TextStyle(color: Colors.white70, fontSize: 14),
+                  ),
+                  SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Icon(Icons.insert_drive_file,
+                          color: AppColors.primary, size: 20),
+                      SizedBox(width: 8),
+                      Text(
+                        'File:',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    path.basename(filePath),
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: Text(
+              'OK',
+              style: TextStyle(color: Colors.white70),
+            ),
+          ),
+          TextButton.icon(
+            onPressed: () {
+              Navigator.of(context).pop();
+              _copyFilePathToClipboard(filePath);
+            },
+            icon: Icon(Icons.copy, color: AppColors.primary, size: 18),
+            label: Text(
+              'Copy Path',
+              style: TextStyle(color: AppColors.primary),
+            ),
+          ),
+          ElevatedButton.icon(
+            onPressed: () {
+              Navigator.of(context).pop();
+              _openFileManagerAlternative();
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+            ),
+            icon: Icon(Icons.folder_open, size: 18),
+            label: Text('Find File'),
+          ),
+        ],
+      ),
+    );
+  }
+
+// Alternative method to open file manager using system intents
+  Future<void> _openFileManagerAlternative() async {
+    if (Platform.isAndroid) {
+      bool opened = false;
+
+      // Method 1: Try to open Downloads in Files app using content URI
+      try {
+        final uri = Uri.parse(
+            'content://com.android.externalstorage.documents/tree/primary%3ADownload');
+        if (await canLaunchUrl(uri)) {
+          await launchUrl(uri, mode: LaunchMode.externalApplication);
+          opened = true;
+        }
+      } catch (e) {
+        print('Method 1 failed: $e');
+      }
+
+      if (!opened) {
+        // Method 2: Try generic file manager intent
+        try {
+          final uri = Uri.parse('file:///storage/emulated/0/Download');
+          if (await canLaunchUrl(uri)) {
+            await launchUrl(uri, mode: LaunchMode.externalApplication);
+            opened = true;
+          }
+        } catch (e) {
+          print('Method 2 failed: $e');
+        }
+      }
+
+      if (!opened) {
+        // Method 3: Open file picker which usually opens Downloads
+        try {
+          final uri = Uri.parse('content://media/external/file');
+          if (await canLaunchUrl(uri)) {
+            await launchUrl(uri, mode: LaunchMode.externalApplication);
+            opened = true;
+          }
+        } catch (e) {
+          print('Method 3 failed: $e');
+        }
+      }
+
+      if (!opened) {
+        // If all methods fail, show help dialog
+        _showFileManagerHelpDialog();
+      }
+    } else {
+      // For iOS, open Files app
+      try {
+        final uri = Uri.parse('shareddocuments://');
+        if (await canLaunchUrl(uri)) {
+          await launchUrl(uri, mode: LaunchMode.externalApplication);
+        }
+      } catch (e) {
+        _showFileManagerHelpDialog();
+      }
+    }
+  }
+
+// Show help dialog with manual instructions
+  Future<void> _showFileManagerHelpDialog() async {
+    final deviceInfo = DeviceInfoPlugin();
+    String deviceBrand = 'your device';
+
+    if (Platform.isAndroid) {
+      try {
+        final androidInfo = await deviceInfo.androidInfo;
+        deviceBrand = androidInfo.brand ?? 'your device';
+      } catch (e) {
+        // Use default
+      }
+    }
+
+    await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppColors.darkSurface.withOpacity(0.9),
+        surfaceTintColor: Colors.transparent,
+        title: Text(
+          'Find Your Downloaded File',
+          style: TextStyle(color: Colors.white),
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'To find your downloaded file, follow these steps:',
+                style: TextStyle(color: Colors.white70),
+              ),
+              SizedBox(height: 16),
+              _buildInstructionStep(
+                '1',
+                'Open your File Manager',
+                'Look for apps like "Files", "My Files", or "File Manager"',
+              ),
+              SizedBox(height: 12),
+              _buildInstructionStep(
+                '2',
+                'Navigate to Downloads',
+                'Find and tap on the "Downloads" or "Download" folder',
+              ),
+              SizedBox(height: 12),
+              _buildInstructionStep(
+                '3',
+                'Find your file',
+                'Look for the file you just downloaded',
+              ),
+              SizedBox(height: 16),
+              Container(
+                padding: EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.blue.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.blue.withOpacity(0.3)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.info_outline, color: Colors.blue, size: 18),
+                        SizedBox(width: 8),
+                        Text(
+                          'Common File Manager Apps:',
+                          style: TextStyle(
+                              color: Colors.white, fontWeight: FontWeight.bold),
+                        ),
+                      ],
+                    ),
+                    SizedBox(height: 8),
+                    Text(
+                      _getFileManagerAppsForDevice(deviceBrand),
+                      style: TextStyle(color: Colors.white70, fontSize: 13),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: Text('Got it', style: TextStyle(color: AppColors.primary)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInstructionStep(
+      String number, String title, String description) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 24,
+          height: 24,
+          decoration: BoxDecoration(
+            color: AppColors.primary,
+            shape: BoxShape.circle,
+          ),
+          child: Center(
+            child: Text(
+              number,
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ),
+        SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 14,
+                ),
+              ),
+              SizedBox(height: 2),
+              Text(
+                description,
+                style: TextStyle(
+                  color: Colors.white70,
+                  fontSize: 13,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  String _getFileManagerAppsForDevice(String brand) {
+    final brandLower = brand.toLowerCase();
+
+    if (brandLower.contains('samsung')) {
+      return '• My Files (Samsung)\n• Files by Google\n• File Manager';
+    } else if (brandLower.contains('xiaomi') || brandLower.contains('mi')) {
+      return '• Mi File Manager\n• Files by Google\n• File Manager+';
+    } else if (brandLower.contains('huawei')) {
+      return '• Files (Huawei)\n• Files by Google\n• File Manager';
+    } else if (brandLower.contains('oppo')) {
+      return '• File Manager (ColorOS)\n• Files by Google';
+    } else if (brandLower.contains('vivo')) {
+      return '• File Manager (Vivo)\n• Files by Google';
+    } else {
+      return '• Files by Google\n• File Manager\n• Documents\n• Total Commander';
+    }
+  }
+
+// Copy file path to clipboard
+  Future<void> _copyFilePathToClipboard(String filePath) async {
+    try {
+      await Clipboard.setData(ClipboardData(text: filePath));
+      _showSnackBar('File path copied to clipboard', isSuccess: true);
+    } catch (e) {
+      AppLogger.error('Could not copy to clipboard', e);
+      _showSnackBar('Could not copy path', isSuccess: false);
+    }
+  }
+
+// Open file manager (Android)
+  Future<void> _openFileManager() async {
+    if (Platform.isAndroid) {
+      try {
+        const platform = MethodChannel('com.yourapp.file_manager');
+        await platform.invokeMethod('openFileManager');
+      } catch (e) {
+        // Fallback: try to open Downloads folder via URL
+        try {
+          final Uri uri = Uri.parse(
+              'content://com.android.externalstorage.documents/document/primary%3ADownload');
+          if (await canLaunchUrl(uri)) {
+            await launchUrl(uri);
+          }
+        } catch (e2) {
+          _showSnackBar('Could not open file manager', isSuccess: false);
+        }
+      }
     }
   }
 
