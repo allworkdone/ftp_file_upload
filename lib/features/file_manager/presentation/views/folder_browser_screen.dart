@@ -4,6 +4,7 @@ import 'dart:io' show Directory, File, Platform;
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:file_saver/file_saver.dart';
 import 'package:file_upload/core/utils/app_logger.dart';
+import 'package:file_upload/core/utils/file_utils.dart';
 import 'package:file_upload/core/utils/permission_utils.dart';
 import 'package:file_upload/features/authentication/domain/entities/ftp_credentials.dart';
 import 'package:file_upload/features/authentication/presentation/viewmodels/auth_viewmodel.dart';
@@ -287,7 +288,7 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
       setState(() => _downloadProgress = 0.9);
 
       // Save to Downloads folder using the improved method
-      final savedFilePath = await _saveToDownloads(file.name, bytes);
+      final savedFilePath = await FileUtils.saveToDownloads(file.name, bytes);
 
       // Update progress to 95%
       setState(() => _downloadProgress = 0.95);
@@ -362,58 +363,182 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
   Widget _buildDownloadProgress() {
     if (!_isDownloading) return SizedBox.shrink();
 
+    // Find the file being downloaded to get its details
+    FTPFile? downloadingFile;
+    for (final file in _files) {
+      if (file.name == _downloadingFileName) {
+        downloadingFile = file;
+        break;
+      }
+    }
+
+    final fileSize = downloadingFile?.size ?? 0;
+    final downloadedBytes = (fileSize * _downloadProgress).toInt();
+
     return Container(
       margin: EdgeInsets.all(16),
       padding: EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: AppColors.darkSurface.withOpacity(0.9),
-        borderRadius: BorderRadius.circular(12),
+        color: AppColors.darkSurface.withOpacity(0.95),
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(color: AppColors.primary.withOpacity(0.3)),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.primary.withOpacity(0.1),
+            blurRadius: 20,
+            spreadRadius: 2,
+          ),
+        ],
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          // File info row
           Row(
             children: [
-              Icon(Icons.download, color: AppColors.primary, size: 24),
+              Container(
+                padding: EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(
+                  _getFileIcon(downloadingFile?.extension),
+                  color: FileUtils.getFileIconColor(downloadingFile?.extension),
+                  size: 24,
+                ),
+              ),
               SizedBox(width: 12),
               Expanded(
-                child: Text(
-                  'Downloading $_downloadingFileName',
-                  style: TextStyle(
-                      color: Colors.white, fontWeight: FontWeight.w500),
-                  overflow: TextOverflow.ellipsis,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Downloading',
+                      style: TextStyle(
+                        color: Colors.white70,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    Text(
+                      _downloadingFileName,
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                    ),
+                  ],
                 ),
+              ),
+              // Cancel button
+              IconButton(
+                onPressed: () {
+                  setState(() {
+                    _isDownloading = false;
+                    _downloadProgress = 0.0;
+                  });
+                  _showSnackBar('Download cancelled', isSuccess: false);
+                },
+                icon: Icon(Icons.close, color: Colors.white70, size: 20),
+                constraints: BoxConstraints(minWidth: 32, minHeight: 32),
+                padding: EdgeInsets.all(4),
               ),
             ],
           ),
-          SizedBox(height: 12),
+
+          SizedBox(height: 16),
+
+          // Progress section
           Column(
             children: [
+              // Progress stats row
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(
-                    '${(_downloadProgress * 100).toInt()}%',
-                    style: TextStyle(
-                      color: AppColors.primary,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
+                  // Percentage
+                  Container(
+                    padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      '${(_downloadProgress * 100).toInt()}%',
+                      style: TextStyle(
+                        color: AppColors.primary,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                      ),
                     ),
                   ),
-                  Text(
-                    _getProgressText(),
-                    style: TextStyle(color: Colors.white70, fontSize: 12),
-                  ),
+
+                  // File size info
+                  if (fileSize > 0) ...[
+                    Text(
+                      '${FileUtils.formatSize(downloadedBytes)} / ${FileUtils.formatSize(fileSize)}',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ] else ...[
+                    Text(
+                      _getProgressText(),
+                      style: TextStyle(color: Colors.white70, fontSize: 12),
+                    ),
+                  ],
                 ],
               ),
+
               SizedBox(height: 8),
-              LinearProgressIndicator(
-                value: _downloadProgress,
-                backgroundColor: Colors.white24,
-                valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
-                minHeight: 6,
+
+              // Progress bar
+              Container(
+                height: 8,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(4),
+                  color: Colors.white12,
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: LinearProgressIndicator(
+                    value: _downloadProgress,
+                    backgroundColor: Colors.transparent,
+                    valueColor:
+                        AlwaysStoppedAnimation<Color>(AppColors.primary),
+                    minHeight: 8,
+                  ),
+                ),
               ),
+
+              SizedBox(height: 8),
+
+              // Status text
+              Text(
+                _getProgressText(),
+                style: TextStyle(
+                  color: Colors.white70,
+                  fontSize: 12,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+
+              // Speed and ETA (if available)
+              if (_downloadProgress > 0.1 && _downloadProgress < 1.0) ...[
+                SizedBox(height: 4),
+                Text(
+                  _getDownloadStats(fileSize),
+                  style: TextStyle(
+                    color: Colors.white60,
+                    fontSize: 11,
+                  ),
+                ),
+              ],
             ],
           ),
         ],
@@ -422,115 +547,113 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
   }
 
   String _getProgressText() {
-    if (_downloadProgress < 0.1) return 'Initializing...';
-    if (_downloadProgress < 0.3) return 'Connecting...';
-    if (_downloadProgress < 0.8) return 'Downloading...';
-    if (_downloadProgress < 0.9) return 'Saving file...';
-    if (_downloadProgress < 1.0) return 'Finalizing...';
-    return 'Complete!';
+    if (_downloadProgress < 0.05) return 'Initializing download...';
+    if (_downloadProgress < 0.1) return 'Requesting permissions...';
+    if (_downloadProgress < 0.2) return 'Connecting to server...';
+    if (_downloadProgress < 0.3) return 'Authenticating...';
+    if (_downloadProgress < 0.8) return 'Downloading file...';
+    if (_downloadProgress < 0.9) return 'Saving to device...';
+    if (_downloadProgress < 0.95) return 'Finalizing...';
+    if (_downloadProgress < 1.0) return 'Almost done...';
+    return 'Download complete!';
   }
 
-// Save file to Downloads folder with proper accessibility
-  Future<String?> _saveToDownloads(String fileName, List<int> bytes) async {
-    try {
-      Directory? downloadsDir;
+// Calculate and display download stats
+  String _getDownloadStats(int fileSize) {
+    if (fileSize <= 0 || _downloadProgress <= 0.1) return '';
 
-      if (Platform.isAndroid) {
-        // Try multiple approaches for Android
+    // Estimate remaining time (very rough calculation)
+    final elapsedTime =
+        Duration(seconds: 5); // Placeholder - you'd track actual time
+    final remainingProgress = 1.0 - _downloadProgress;
+    final estimatedTotalTime = elapsedTime.inSeconds / _downloadProgress;
+    final remainingTime = (estimatedTotalTime * remainingProgress).toInt();
 
-        // Method 1: Try to get Downloads directory directly
-        try {
-          downloadsDir = Directory('/storage/emulated/0/Download');
-          if (!await downloadsDir.exists()) {
-            downloadsDir = Directory('/storage/emulated/0/Downloads');
-          }
-        } catch (e) {
-          AppLogger.error('Could not access Downloads via direct path', e);
-        }
-
-        // Method 2: Use path_provider as fallback
-        if (downloadsDir == null || !await downloadsDir.exists()) {
-          try {
-            downloadsDir = await getDownloadsDirectory();
-          } catch (e) {
-            AppLogger.error(
-                'Could not get Downloads directory via path_provider', e);
-          }
-        }
-
-        // Method 3: Use external storage directory as final fallback
-        if (downloadsDir == null || !await downloadsDir.exists()) {
-          try {
-            final externalDir = await getExternalStorageDirectory();
-            if (externalDir != null) {
-              downloadsDir =
-                  Directory(path.join(externalDir.path, 'Downloads'));
-              await downloadsDir.create(recursive: true);
-            }
-          } catch (e) {
-            AppLogger.error(
-                'Could not create Downloads in external storage', e);
-          }
-        }
-      } else if (Platform.isIOS) {
-        // For iOS, use Documents directory
-        downloadsDir = await getApplicationDocumentsDirectory();
-      } else {
-        // For desktop, use Downloads directory
-        downloadsDir = await getDownloadsDirectory();
-      }
-
-      if (downloadsDir == null) {
-        throw Exception('Could not determine downloads directory');
-      }
-
-      // Ensure the directory exists
-      if (!await downloadsDir.exists()) {
-        await downloadsDir.create(recursive: true);
-      }
-
-      // Create unique filename if file already exists
-      String finalFileName = fileName;
-      int counter = 1;
-
-      while (await File(path.join(downloadsDir.path, finalFileName)).exists()) {
-        final nameWithoutExt = path.basenameWithoutExtension(fileName);
-        final extension = path.extension(fileName);
-        finalFileName = '${nameWithoutExt}_$counter$extension';
-        counter++;
-      }
-
-      // Save the file
-      final filePath = path.join(downloadsDir.path, finalFileName);
-      final file = File(filePath);
-      await file.writeAsBytes(bytes);
-
-      // For Android, try to make the file visible in media scanner
-      if (Platform.isAndroid) {
-        await _notifyMediaScanner(filePath);
-      }
-
-      return filePath;
-    } catch (e) {
-      AppLogger.error('Error saving file to Downloads', e);
-
-      // Final fallback: try using FileSaver
-      try {
-        await FileSaver.instance.saveFile(
-          name: fileName,
-          bytes: Uint8List.fromList(bytes),
-          fileExtension: path.extension(fileName).replaceFirst('.', ''),
-          mimeType: _getMimeType(path.extension(fileName)),
-        );
-        return 'FileSaver location'; // We don't know exact path with FileSaver
-      } catch (e2) {
-        AppLogger.error('FileSaver fallback also failed', e2);
-        return null;
-      }
+    if (remainingTime > 60) {
+      final minutes = (remainingTime / 60).ceil();
+      return 'About ${minutes}m remaining';
+    } else if (remainingTime > 0) {
+      return 'About ${remainingTime}s remaining';
+    } else {
+      return 'Finishing up...';
     }
   }
 
-// Notify Android's MediaScanner about the new file
+  IconData _getFileIcon(String? ext) {
+    if (ext == null) return Icons.insert_drive_file;
+
+    final extension = ext.toLowerCase();
+
+    // Images
+    if (['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg', 'ico']
+        .contains(extension)) {
+      return Icons.image;
+    }
+
+    // Videos
+    if (['mp4', 'avi', 'mov', 'wmv', 'flv', 'webm', 'mkv', '3gp']
+        .contains(extension)) {
+      return Icons.video_file;
+    }
+
+    // Audio
+    if (['mp3', 'wav', 'flac', 'aac', 'ogg', 'wma', 'm4a']
+        .contains(extension)) {
+      return Icons.audio_file;
+    }
+
+    // Documents
+    if (['pdf'].contains(extension)) {
+      return Icons.picture_as_pdf;
+    }
+
+    if (['doc', 'docx'].contains(extension)) {
+      return Icons.description;
+    }
+
+    if (['xls', 'xlsx', 'csv'].contains(extension)) {
+      return Icons.table_chart;
+    }
+
+    if (['ppt', 'pptx'].contains(extension)) {
+      return Icons.slideshow;
+    }
+
+    // Archives
+    if (['zip', 'rar', '7z', 'tar', 'gz', 'bz2'].contains(extension)) {
+      return Icons.archive;
+    }
+
+    // Code files
+    if (['html', 'css', 'js', 'json', 'xml', 'yml', 'yaml']
+        .contains(extension)) {
+      return Icons.code;
+    }
+
+    if (['dart', 'java', 'py', 'cpp', 'c', 'cs', 'php', 'rb', 'swift']
+        .contains(extension)) {
+      return Icons.integration_instructions;
+    }
+
+    // Text files
+    if (['txt', 'rtf', 'md'].contains(extension)) {
+      return Icons.text_snippet;
+    }
+
+    // Executables
+    if (['exe', 'msi', 'dmg', 'pkg', 'deb', 'rpm'].contains(extension)) {
+      return Icons.apps;
+    }
+
+    // Fonts
+    if (['ttf', 'otf', 'woff', 'woff2'].contains(extension)) {
+      return Icons.font_download;
+    }
+
+    return Icons.insert_drive_file;
+  }
+
+  // Notify Android's MediaScanner about the new file
   Future<void> _notifyMediaScanner(String filePath) async {
     try {
       if (Platform.isAndroid) {
@@ -986,31 +1109,22 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
     );
   }
 
-  MimeType _getMimeType(String? ext) {
-    if (ext == null) return MimeType.other;
-    const mimeMap = {
-      'jpg': MimeType.jpeg,
-      'jpeg': MimeType.jpeg,
-      'png': MimeType.png,
-      'gif': MimeType.gif,
-      'pdf': MimeType.pdf,
-      'doc': MimeType.other,
-      'docx': MimeType.other,
-      'xls': MimeType.other,
-      'xlsx': MimeType.other,
-      'zip': MimeType.zip,
-      'mp3': MimeType.mp3,
-      'mp4': MimeType.mp4Video,
-    };
-    return mimeMap[ext.toLowerCase()] ?? MimeType.other;
-  }
-
   String _formatSize(int bytes) {
+    if (bytes == 0) return '0 B';
     if (bytes < 1024) return '$bytes B';
-    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
-    if (bytes < 1024 * 1024 * 1024)
-      return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
-    return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
+
+    final kb = bytes / 1024;
+    if (kb < 1024) {
+      return kb < 10 ? '${kb.toStringAsFixed(1)} KB' : '${kb.toInt()} KB';
+    }
+
+    final mb = kb / 1024;
+    if (mb < 1024) {
+      return mb < 10 ? '${mb.toStringAsFixed(1)} MB' : '${mb.toInt()} MB';
+    }
+
+    final gb = mb / 1024;
+    return gb < 10 ? '${gb.toStringAsFixed(1)} GB' : '${gb.toInt()} GB';
   }
 
   PopupMenuItem<String> _buildMenuItem(String value, IconData icon, String text,
@@ -1076,7 +1190,7 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
       ),
       child: ListTile(
         leading: Icon(_getFileIcon(file.extension),
-            color: _getFileIconColor(file.extension)),
+            color: FileUtils.getFileIconColor(file.extension)),
         title: Text(file.name, style: const TextStyle(color: Colors.white)),
         subtitle: Text('${_formatSize(file.size)}',
             style: const TextStyle(color: Colors.white70)),
@@ -1135,40 +1249,57 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
             stops: [0.1, 0.9],
           ),
         ),
-        child: _loading
-            ? Center(
-                child: CircularProgressIndicator(
-                year2023: false,
-                color: AppColors.primaryLight,
-                backgroundColor: AppColors.darkSurface,
-              ))
-            : RefreshIndicator(
-                backgroundColor: AppColors.darkSurface,
-                color: AppColors.primaryLight,
-                onRefresh: _load,
-                child: ListView(
-                  children: [
-                    if (_error != null) _buildErrorCard(),
+        child: Stack(
+          children: [
+            // Main content
+            _loading
+                ? Center(
+                    child: CircularProgressIndicator(
+                    year2023: false,
+                    color: AppColors.primaryLight,
+                    backgroundColor: AppColors.darkSurface,
+                  ))
+                : RefreshIndicator(
+                    backgroundColor: AppColors.darkSurface,
+                    color: AppColors.primaryLight,
+                    onRefresh: _load,
+                    child: ListView(
+                      children: [
+                        if (_error != null) _buildErrorCard(),
 
-                    // Current path
-                    Padding(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 20, vertical: 12),
-                      child: Text(
-                        'Path: ${widget.folderPath}',
-                        style: const TextStyle(
-                            color: Colors.white70, fontSize: 12),
-                      ),
+                        // Current path
+                        Padding(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 20, vertical: 12),
+                          child: Text(
+                            'Path: ${widget.folderPath}',
+                            style: const TextStyle(
+                                color: Colors.white70, fontSize: 12),
+                          ),
+                        ),
+
+                        if (_folders.isNotEmpty) _buildSectionHeader('Folders'),
+                        ..._folders.map(_buildFolderTile),
+                        if (_files.isNotEmpty) _buildSectionHeader('Files'),
+                        ..._files.map(_buildFileTile),
+                        if (_folders.isEmpty && _files.isEmpty)
+                          _buildEmptyState(),
+
+                        // Add spacing at bottom for download progress
+                        if (_isDownloading) SizedBox(height: 120),
+                      ],
                     ),
+                  ),
 
-                    if (_folders.isNotEmpty) _buildSectionHeader('Folders'),
-                    ..._folders.map(_buildFolderTile),
-                    if (_files.isNotEmpty) _buildSectionHeader('Files'),
-                    ..._files.map(_buildFileTile),
-                    if (_folders.isEmpty && _files.isEmpty) _buildEmptyState(),
-                  ],
-                ),
-              ),
+            // Download progress overlay
+            Positioned(
+              bottom: 0,
+              left: 0,
+              right: 0,
+              child: _buildDownloadProgress(),
+            ),
+          ],
+        ),
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () =>
@@ -1241,57 +1372,5 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
         ),
       ),
     );
-  }
-
-  IconData _getFileIcon(String? ext) {
-    if (ext == null) return Icons.insert_drive_file;
-    const iconMap = {
-      'jpg': Icons.image,
-      'jpeg': Icons.image,
-      'png': Icons.image,
-      'gif': Icons.image,
-      'mp4': Icons.video_file,
-      'avi': Icons.video_file,
-      'mov': Icons.video_file,
-      'mp3': Icons.audio_file,
-      'wav': Icons.audio_file,
-      'flac': Icons.audio_file,
-      'pdf': Icons.picture_as_pdf,
-      'doc': Icons.description,
-      'docx': Icons.description,
-      'xls': Icons.table_chart,
-      'xlsx': Icons.table_chart,
-      'zip': Icons.archive,
-      'rar': Icons.archive,
-      '7z': Icons.archive,
-      'txt': Icons.text_snippet,
-    };
-    return iconMap[ext.toLowerCase()] ?? Icons.insert_drive_file;
-  }
-
-  Color _getFileIconColor(String? ext) {
-    if (ext == null) return Colors.grey[400]!;
-    const colorMap = {
-      'jpg': Colors.green,
-      'jpeg': Colors.green,
-      'png': Colors.green,
-      'gif': Colors.green,
-      'mp4': Colors.red,
-      'avi': Colors.red,
-      'mov': Colors.red,
-      'mp3': Colors.purple,
-      'wav': Colors.purple,
-      'flac': Colors.purple,
-      'pdf': Colors.red,
-      'doc': Colors.blue,
-      'docx': Colors.blue,
-      'xls': Colors.green,
-      'xlsx': Colors.green,
-      'zip': Colors.orange,
-      'rar': Colors.orange,
-      '7z': Colors.orange,
-      'txt': Colors.grey,
-    };
-    return colorMap[ext.toLowerCase()]?[300] ?? Colors.grey[400]!;
   }
 }

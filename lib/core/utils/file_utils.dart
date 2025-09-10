@@ -1,5 +1,8 @@
 import 'dart:io';
 import 'dart:typed_data';
+import 'package:file_saver/file_saver.dart';
+import 'package:flutter/material.dart';
+import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import 'package:file_picker/file_picker.dart';
 import 'app_logger.dart';
@@ -287,5 +290,178 @@ class FileUtils {
 
     final nameWithoutExtension = getFileNameWithoutExtension(fileName);
     return !reservedNames.contains(nameWithoutExtension.toUpperCase());
+  }
+
+  static String formatSize(int? bytes) {
+    if (bytes == null || bytes == 0) return '0 B';
+    if (bytes < 1024) return '$bytes B';
+
+    final kb = bytes / 1024;
+    if (kb < 1024) {
+      return kb < 10 ? '${kb.toStringAsFixed(1)} KB' : '${kb.toInt()} KB';
+    }
+
+    final mb = kb / 1024;
+    if (mb < 1024) {
+      return mb < 10 ? '${mb.toStringAsFixed(1)} MB' : '${mb.toInt()} MB';
+    }
+
+    final gb = mb / 1024;
+    return gb < 10 ? '${gb.toStringAsFixed(1)} GB' : '${gb.toInt()} GB';
+  }
+
+  static IconData getFileIcon(String? extension) {
+    if (extension == null) return Icons.insert_drive_file;
+    final ext = extension.toLowerCase();
+
+    if (['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg', 'ico']
+        .contains(ext)) {
+      return Icons.image;
+    }
+    if (['mp4', 'avi', 'mov', 'wmv', 'flv', 'webm', 'mkv', '3gp']
+        .contains(ext)) {
+      return Icons.video_file;
+    }
+    if (['mp3', 'wav', 'flac', 'aac', 'ogg', 'wma', 'm4a'].contains(ext)) {
+      return Icons.audio_file;
+    }
+    if (ext == 'pdf') return Icons.picture_as_pdf;
+    if (['doc', 'docx'].contains(ext)) return Icons.description;
+    if (['xls', 'xlsx', 'csv'].contains(ext)) return Icons.table_chart;
+    if (['ppt', 'pptx'].contains(ext)) return Icons.slideshow;
+    if (['zip', 'rar', '7z', 'tar', 'gz', 'bz2'].contains(ext)) {
+      return Icons.archive;
+    }
+    if (['html', 'css', 'js', 'json', 'xml', 'yml', 'yaml'].contains(ext)) {
+      return Icons.code;
+    }
+    if (['dart', 'java', 'py', 'cpp', 'c', 'cs', 'php', 'rb', 'swift']
+        .contains(ext)) {
+      return Icons.integration_instructions;
+    }
+    if (['txt', 'rtf', 'md'].contains(ext)) return Icons.text_snippet;
+    if (['exe', 'msi', 'dmg', 'pkg', 'deb', 'rpm'].contains(ext)) {
+      return Icons.apps;
+    }
+    if (['ttf', 'otf', 'woff', 'woff2'].contains(ext)) {
+      return Icons.font_download;
+    }
+
+    return Icons.insert_drive_file;
+  }
+
+  static Color getFileIconColor(String? extension) {
+    if (extension == null) return Colors.grey[400]!;
+    final ext = extension.toLowerCase();
+
+    if (['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg', 'ico']
+        .contains(ext)) {
+      return Colors.green[400]!;
+    }
+    if (['mp4', 'avi', 'mov', 'wmv', 'flv', 'webm', 'mkv', '3gp']
+        .contains(ext)) {
+      return Colors.red[400]!;
+    }
+    if (['mp3', 'wav', 'flac', 'aac', 'ogg', 'wma', 'm4a'].contains(ext)) {
+      return Colors.purple[400]!;
+    }
+    if (ext == 'pdf') return Colors.red[600]!;
+    if (['doc', 'docx'].contains(ext)) return Colors.blue[400]!;
+    if (['xls', 'xlsx', 'csv'].contains(ext)) return Colors.green[600]!;
+    if (['ppt', 'pptx'].contains(ext)) return Colors.orange[400]!;
+    if (['zip', 'rar', '7z', 'tar', 'gz', 'bz2'].contains(ext)) {
+      return Colors.amber[400]!;
+    }
+    if (['html', 'css', 'js', 'json', 'xml', 'yml', 'yaml'].contains(ext)) {
+      return Colors.cyan[400]!;
+    }
+    if (['dart', 'java', 'py', 'cpp', 'c', 'cs', 'php', 'rb', 'swift']
+        .contains(ext)) {
+      return Colors.teal[400]!;
+    }
+    if (['txt', 'rtf', 'md'].contains(ext)) return Colors.grey[500]!;
+    if (['exe', 'msi', 'dmg', 'pkg', 'deb', 'rpm'].contains(ext)) {
+      return Colors.deepPurple[400]!;
+    }
+    if (['ttf', 'otf', 'woff', 'woff2'].contains(ext)) {
+      return Colors.indigo[400]!;
+    }
+
+    return Colors.grey[400]!;
+  }
+
+  static MimeType getMimeType(String? ext) {
+    if (ext == null) return MimeType.other;
+    const mimeMap = {
+      'jpg': MimeType.jpeg,
+      'jpeg': MimeType.jpeg,
+      'png': MimeType.png,
+      'gif': MimeType.gif,
+      'pdf': MimeType.pdf,
+      'zip': MimeType.zip,
+      'mp3': MimeType.mp3,
+      'mp4': MimeType.mp4Video,
+    };
+    return mimeMap[ext.toLowerCase()] ?? MimeType.other;
+  }
+
+  static Future<String?> saveToDownloads(
+      String fileName, List<int> bytes) async {
+    try {
+      Directory? downloadsDir;
+
+      if (Platform.isAndroid) {
+        downloadsDir = Directory('/storage/emulated/0/Download');
+        if (!await downloadsDir.exists()) {
+          downloadsDir = Directory('/storage/emulated/0/Downloads');
+        }
+        if (!await downloadsDir.exists()) {
+          downloadsDir = await getDownloadsDirectory();
+        }
+        if (downloadsDir == null || !await downloadsDir.exists()) {
+          final externalDir = await getExternalStorageDirectory();
+          if (externalDir != null) {
+            downloadsDir = Directory(path.join(externalDir.path, 'Downloads'));
+            await downloadsDir.create(recursive: true);
+          }
+        }
+      } else if (Platform.isIOS) {
+        downloadsDir = await getApplicationDocumentsDirectory();
+      } else {
+        downloadsDir = await getDownloadsDirectory();
+      }
+
+      if (downloadsDir == null || !await downloadsDir.exists()) {
+        await downloadsDir?.create(recursive: true);
+      }
+
+      String finalFileName = fileName;
+      int counter = 1;
+      while (
+          await File(path.join(downloadsDir!.path, finalFileName)).exists()) {
+        final nameWithoutExt = path.basenameWithoutExtension(fileName);
+        final extension = path.extension(fileName);
+        finalFileName = '${nameWithoutExt}_$counter$extension';
+        counter++;
+      }
+
+      final filePath = path.join(downloadsDir.path, finalFileName);
+      final file = File(filePath);
+      await file.writeAsBytes(bytes);
+
+      return filePath;
+    } catch (e) {
+      try {
+        await FileSaver.instance.saveFile(
+          name: fileName,
+          bytes: Uint8List.fromList(bytes),
+          fileExtension: path.extension(fileName).replaceFirst('.', ''),
+          mimeType: getMimeType(path.extension(fileName)),
+        );
+        return 'FileSaver location';
+      } catch (e2) {
+        return null;
+      }
+    }
   }
 }
