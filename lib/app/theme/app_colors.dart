@@ -94,9 +94,12 @@ class AppColors {
   );
 
   // ================ OPACITY VARIATIONS ================
-  static Color withLowOpacity(Color color) => color.withOpacity(0.1);
-  static Color withMediumOpacity(Color color) => color.withOpacity(0.5);
-  static Color withHighOpacity(Color color) => color.withOpacity(0.8);
+  static Color withLowOpacity(Color color) =>
+      color.withAlpha((0.1 * 255).round());
+  static Color withMediumOpacity(Color color) =>
+      color.withAlpha((0.5 * 255).round());
+  static Color withHighOpacity(Color color) =>
+      color.withAlpha((0.8 * 255).round());
 
   // ================ THEME DATA ================
   // Light Theme
