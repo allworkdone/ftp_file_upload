@@ -6,6 +6,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:cross_file/cross_file.dart';
 import 'package:archive/archive_io.dart';
+import 'package:file_upload/shared/widgets/neon_button.dart';
 
 import '../../domain/usecases/create_folder_usecase.dart';
 import '../../domain/usecases/get_folders_usecase.dart';
@@ -430,13 +431,13 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  _buildNeonButton(
+                  NeonButton(
                     onPressed: _isProcessingBundle ? null : _pickFile,
                     icon: Icons.insert_drive_file,
                     label: 'Select File',
                   ),
                   const SizedBox(width: 16),
-                  _buildNeonButton(
+                  NeonButton(
                     onPressed: _isProcessingBundle ? null : _pickDirectory,
                     icon: Icons.folder,
                     label: 'Select Directory',
@@ -445,43 +446,6 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
               ),
             ],
           ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildNeonButton({
-    required VoidCallback? onPressed,
-    required IconData icon,
-    required String label,
-  }) {
-    return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: onPressed != null
-            ? [
-                BoxShadow(
-                  color: AppColors.primaryLight.withOpacity(0.4),
-                  blurRadius: 10,
-                  spreadRadius: 1,
-                ),
-              ]
-            : null,
-      ),
-      child: ElevatedButton.icon(
-        onPressed: onPressed,
-        icon: Icon(icon, size: 18, color: Colors.white),
-        label: Text(label, style: const TextStyle(color: Colors.white)),
-        style: ElevatedButton.styleFrom(
-          backgroundColor: AppColors.primary,
-          foregroundColor: Colors.white,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-            side: BorderSide(
-                color: AppColors.primaryLight.withOpacity(0.5), width: 1),
-          ),
-          elevation: 0,
         ),
       ),
     );
@@ -710,7 +674,7 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
             const SizedBox(height: 24),
             SizedBox(
               width: double.infinity,
-              child: _buildNeonButton(
+              child: NeonButton(
                 onPressed:
                     _picked == null || upload.uploading || _isProcessingBundle
                         ? null

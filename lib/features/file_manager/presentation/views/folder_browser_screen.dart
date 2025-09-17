@@ -273,19 +273,24 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
     }
   }
 
-  Future<String?> _showRenameDialog(String currentName) async {
-    final controller = TextEditingController(text: currentName);
+  Future<String?> _showInputDialog({
+    required String title,
+    String? label,
+    String? initialValue,
+    bool autofocus = false,
+  }) async {
+    final controller = TextEditingController(text: initialValue);
     return showDialog<String?>(
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: AppColors.darkSurface.withOpacity(0.9),
         surfaceTintColor: Colors.transparent,
-        title: const Text('Rename', style: TextStyle(color: Colors.white)),
+        title: Text(title, style: const TextStyle(color: Colors.white)),
         content: TextField(
           controller: controller,
           style: const TextStyle(color: Colors.white),
           decoration: InputDecoration(
-            labelText: 'New name',
+            labelText: label,
             labelStyle: const TextStyle(color: Colors.white70),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
@@ -302,7 +307,7 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
             filled: true,
             fillColor: AppColors.darkSurface.withOpacity(0.8),
           ),
-          autofocus: true,
+          autofocus: autofocus,
         ),
         actions: [
           TextButton(
@@ -315,10 +320,19 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
               backgroundColor: AppColors.primary,
               foregroundColor: Colors.white,
             ),
-            child: const Text('Rename'),
+            child: const Text('OK'),
           ),
         ],
       ),
+    );
+  }
+
+  Future<String?> _showRenameDialog(String currentName) async {
+    return _showInputDialog(
+      title: 'Rename',
+      label: 'New name',
+      initialValue: currentName,
+      autofocus: true,
     );
   }
 
@@ -1232,23 +1246,7 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
     );
   }
 
-  String _formatSize(int bytes) {
-    if (bytes == 0) return '0 B';
-    if (bytes < 1024) return '$bytes B';
-
-    final kb = bytes / 1024;
-    if (kb < 1024) {
-      return kb < 10 ? '${kb.toStringAsFixed(1)} KB' : '${kb.toInt()} KB';
-    }
-
-    final mb = kb / 1024;
-    if (mb < 1024) {
-      return mb < 10 ? '${mb.toStringAsFixed(1)} MB' : '${mb.toInt()} MB';
-    }
-
-    final gb = mb / 1024;
-    return gb < 10 ? '${gb.toStringAsFixed(1)} GB' : '${gb.toInt()} GB';
-  }
+  
 
   PopupMenuItem<String> _buildMenuItem(String value, IconData icon, String text,
       {Color? color}) {
@@ -1264,7 +1262,7 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
     );
   }
 
-  Widget _buildFolderTile(FTPFolder folder) {
+  Widget _buildTileContainer(Widget child) {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       decoration: BoxDecoration(
@@ -1272,7 +1270,13 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: AppColors.primaryLight.withOpacity(0.2)),
       ),
-      child: ListTile(
+      child: child,
+    );
+  }
+
+  Widget _buildFolderTile(FTPFolder folder) {
+    return _buildTileContainer(
+      ListTile(
         leading: Icon(Icons.folder, color: Colors.amber[300]),
         title: Text(folder.name, style: const TextStyle(color: Colors.white)),
         subtitle: Text(
@@ -1308,14 +1312,8 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
   }
 
   Widget _buildFileTile(FTPFile file) {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      decoration: BoxDecoration(
-        color: AppColors.darkSurface.withOpacity(0.6),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.primaryLight.withOpacity(0.2)),
-      ),
-      child: ListTile(
+    return _buildTileContainer(
+      ListTile(
         leading: Icon(FileUtils.getFileIcon(file.extension),
             color: FileUtils.getFileIconColor(file.extension)),
         title: Text(file.name, style: const TextStyle(color: Colors.white)),
@@ -1550,14 +1548,8 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
   }
 
   Widget _buildSearchResultTile(SearchResult result) {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      decoration: BoxDecoration(
-        color: AppColors.darkSurface.withOpacity(0.6),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.primaryLight.withOpacity(0.2)),
-      ),
-      child: ListTile(
+    return _buildTileContainer(
+      ListTile(
         leading: Icon(
           result.isFile ? FileUtils.getFileIcon(result.extension) : Icons.folder,
           color: result.isFile 

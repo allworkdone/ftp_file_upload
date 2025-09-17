@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:file_upload/shared/widgets/neon_button.dart';
 
 import '../viewmodels/auth_viewmodel.dart';
 import '../../domain/entities/ftp_credentials.dart';
@@ -472,7 +473,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 ],
 
                 // Login Buttons
-                _buildNeonButton(
+                NeonButton(
                   onPressed: auth.testing ? null : _testAndLogin,
                   icon: Icons.login,
                   label: 'TEST & LOGIN',
@@ -481,7 +482,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
                 if (hasCredentials) ...[
                   const SizedBox(height: 12),
-                  _buildNeonButton(
+                  NeonButton(
                     onPressed: auth.testing ? null : _quickLogin,
                     icon: Icons.flash_on,
                     label: 'QUICK LOGIN',
@@ -491,65 +492,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               ],
             ),
           ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildNeonButton({
-    required VoidCallback? onPressed,
-    required IconData icon,
-    required String label,
-    required bool isPrimary,
-  }) {
-    return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: onPressed != null
-            ? [
-                BoxShadow(
-                  color: isPrimary
-                      ? AppColors.primaryLight.withOpacity(0.6)
-                      : Colors.white.withOpacity(0.3),
-                  blurRadius: 15,
-                  spreadRadius: 2,
-                ),
-                BoxShadow(
-                  color: isPrimary
-                      ? AppColors.primary.withOpacity(0.4)
-                      : Colors.white.withOpacity(0.1),
-                  blurRadius: 25,
-                  spreadRadius: 1,
-                ),
-              ]
-            : null,
-      ),
-      child: ElevatedButton.icon(
-        onPressed: onPressed,
-        icon: Icon(icon,
-            color: isPrimary ? Colors.white : AppColors.primaryLight),
-        label: Text(
-          label,
-          style: TextStyle(
-            fontWeight: FontWeight.bold,
-            color: isPrimary ? Colors.white : AppColors.primaryLight,
-            letterSpacing: 1,
-          ),
-        ),
-        style: ElevatedButton.styleFrom(
-          backgroundColor: isPrimary ? AppColors.primary : Colors.transparent,
-          foregroundColor: Colors.white,
-          padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-            side: BorderSide(
-              color: isPrimary
-                  ? AppColors.primaryLight
-                  : AppColors.primaryLight.withOpacity(0.5),
-              width: 2,
-            ),
-          ),
-          elevation: 0,
         ),
       ),
     );
