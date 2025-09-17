@@ -162,8 +162,10 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
     }
 
     // Debounce the search to avoid too many requests
-    _searchDebounceTimer = Timer(const Duration(milliseconds: 300), () {
-      _performSearch(query);
+    _searchDebounceTimer = Timer(const Duration(milliseconds: 500), () {
+      if (mounted) {
+        _performSearch(query);
+      }
     });
   }
 
@@ -172,44 +174,73 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
     _searchCancelToken?.cancel();
     _searchCancelToken = CancelToken();
 
+    _showSnackBar('Searching for "$query"...', isSuccess: true, showProgress: true);
+
     // For short queries, search only in current folder
     if (query.length < 3) {
-      setState(() {
-        _filteredFolders = _folders.where((folder) => 
-          folder.name.toLowerCase().contains(query.toLowerCase())
-        ).toList();
-        
-        _filteredFiles = _files.where((file) => 
-          file.name.toLowerCase().contains(query.toLowerCase())
-        ).toList();
-        
-        _searchResults = const [];
-        _searching = false;
-      });
+      if (mounted) {
+        setState(() {
+          _filteredFolders = _folders.where((folder) => 
+            folder.name.toLowerCase().contains(query.toLowerCase())
+          ).toList();
+          
+          _filteredFiles = _files.where((file) => 
+            file.name.toLowerCase().contains(query.toLowerCase())
+          ).toList();
+          
+          _searchResults = const [];
+          _searching = false;
+        });
+      }
       return;
     }
 
     // For longer queries, perform recursive search
-    setState(() {
-      _searching = true;
-      _filteredFolders = const [];
-      _filteredFiles = const [];
-    });
+    if (mounted) {
+      setState(() {
+        _searching = true;
+        _filteredFolders = const [];
+        _filteredFiles = const [];
+      });
+    }
 
     try {
+      print('Starting search for: $query in ${widget.folderPath}');
       final results = await getIt<SearchFilesUsecase>()(query, widget.folderPath);
+      print('Search completed. Found ${results.length} results');
       if (mounted && !_searchCancelToken!.isCancelled) {
+        if (mounted) {
+          setState(() {
+            _searchResults = results;
+            _searching = false;
+          });
+        }
+        if (results.isNotEmpty) {
+          _showSnackBar('Found ${results.length} results', isSuccess: true);
+        } else {
+          _showSnackBar('No results found', isSuccess: false);
+        }
+      } else if (mounted) {
+        // Search was cancelled
         setState(() {
-          _searchResults = results;
           _searching = false;
         });
       }
     } catch (e) {
+      print('Search failed: $e');
       if (mounted && !_searchCancelToken!.isCancelled) {
+        if (mounted) {
+          setState(() {
+            _searchResults = const [];
+            _searching = false;
+            _error = 'Search failed: $e';
+          });
+        }
+        _showSnackBar('Search failed: $e', isSuccess: false);
+      } else if (mounted) {
+        // Search was cancelled
         setState(() {
-          _searchResults = const [];
           _searching = false;
-          _error = 'Search failed: $e';
         });
       }
     }
@@ -1377,7 +1408,7 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
                         setState(() {
                           _searching = false;
                           _searchResults = const [];
-                          _searchQuery = '';
+                          // Don't clear _searchQuery here, as the user might want to continue searching
                         });
                         _showSnackBar('Search cancelled', isSuccess: true);
                       },
@@ -1429,7 +1460,7 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
                         ),
 
                         // Show search results when searching
-                        if (_searchQuery.isNotEmpty && _searchResults.isNotEmpty) ...[
+                        if (_searchResults.isNotEmpty) ...[
                           _buildSectionHeader('Search Results (${_searchResults.length})'),
                           ..._searchResults.map(_buildSearchResultTile),
                         ] else if (_searching) ...[
