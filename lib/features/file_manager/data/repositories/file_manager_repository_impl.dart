@@ -11,6 +11,7 @@ import '../datasources/ftp_datasource.dart';
 import '../datasources/local_file_datasource.dart';
 import '../../../../core/di/injection.dart';
 import '../../../../core/network/network_info.dart';
+import '../../../../core/error/exceptions.dart';
 
 class FileManagerRepositoryImpl implements FileManagerRepository {
   final FTPDatasource ftpDatasource;
@@ -23,41 +24,73 @@ class FileManagerRepositoryImpl implements FileManagerRepository {
     required this.networkInfo,
   });
 
-  Future<FTPCredentials?> _creds() => getIt<GetCredentialsUsecase>()();
+  @override
+  Future<void> renameFile(String oldPath, String newPath) async {
+    if (!(await networkInfo.isConnected)) {
+      throw const FTPException('No internet connection', FTPExceptionType.connection);
+    }
+
+    final credentials = await getIt<GetCredentialsUsecase>()();
+    if (credentials == null) {
+      throw const FTPException('No credentials found', FTPExceptionType.authentication);
+    }
+    
+    await ftpDatasource.renameFile(credentials, oldPath, newPath);
+  }
+
+  @override
+  Future<void> renameFolder(String oldPath, String newPath) async {
+    if (!(await networkInfo.isConnected)) {
+      throw const FTPException('No internet connection', FTPExceptionType.connection);
+    }
+
+    final credentials = await getIt<GetCredentialsUsecase>()();
+    if (credentials == null) {
+      throw const FTPException('No credentials found', FTPExceptionType.authentication);
+    }
+    
+    await ftpDatasource.renameFolder(credentials, oldPath, newPath);
+  }
 
   @override
   Future<void> createFolder(String path) async {
-    final creds = await _creds();
-    if (creds == null) throw Exception('No credentials');
-    await ftpDatasource.createFolder(creds, path);
+    final credentials = await getIt<GetCredentialsUsecase>()();
+    if (credentials == null) {
+      throw const FTPException('No credentials found', FTPExceptionType.authentication);
+    }
+    await ftpDatasource.createFolder(credentials, path);
   }
 
   @override
   Future<List<FTPFolder>> getFolders(String path) async {
-    final creds = await _creds();
-    if (creds == null) throw Exception('No credentials');
-    return ftpDatasource.listFolders(creds, path);
+    final credentials = await getIt<GetCredentialsUsecase>()();
+    if (credentials == null) {
+      throw const FTPException('No credentials found', FTPExceptionType.authentication);
+    }
+    return ftpDatasource.listFolders(credentials, path);
   }
 
   @override
   Future<List<FTPFile>> getFiles(String path) async {
-    final creds = await _creds();
-    if (creds == null) throw Exception('No credentials');
-    return ftpDatasource.listFiles(creds, path);
+    final credentials = await getIt<GetCredentialsUsecase>()();
+    if (credentials == null) {
+      throw const FTPException('No credentials found', FTPExceptionType.authentication);
+    }
+    return ftpDatasource.listFiles(credentials, path);
   }
 
   @override
   Stream<UploadProgress> uploadFile(String localPath, String remotePath) {
     final controller = StreamController<UploadProgress>();
     () async {
-      final creds = await _creds();
-      if (creds == null) {
-        controller.addError(Exception('No credentials'));
+      final credentials = await getIt<GetCredentialsUsecase>()();
+      if (credentials == null) {
+        controller.addError(const FTPException('No credentials found', FTPExceptionType.authentication));
         await controller.close();
         return;
       }
       if (!await networkInfo.isConnected) {
-        controller.addError(Exception('No internet'));
+        controller.addError(const FTPException('No internet connection', FTPExceptionType.connection));
         await controller.close();
         return;
       }
@@ -103,7 +136,7 @@ class FileManagerRepositoryImpl implements FileManagerRepository {
         };
 
         await ftpDatasource.uploadFile(
-          creds,
+          credentials,
           file,
           remotePath,
           onProgress: progressCb,
@@ -140,29 +173,35 @@ class FileManagerRepositoryImpl implements FileManagerRepository {
 
   @override
   Future<void> deleteFile(String remoteFilePath) async {
-    final creds = await _creds();
-    if (creds == null) throw Exception('No credentials');
-    await ftpDatasource.deleteFile(creds, remoteFilePath);
+    final credentials = await getIt<GetCredentialsUsecase>()();
+    if (credentials == null) {
+      throw const FTPException('No credentials found', FTPExceptionType.authentication);
+    }
+    await ftpDatasource.deleteFile(credentials, remoteFilePath);
   }
 
   @override
   Future<void> deleteFolder(String remoteFolderPath) async {
-    final creds = await _creds();
-    if (creds == null) throw Exception('No credentials');
-    await ftpDatasource.deleteFolder(creds, remoteFolderPath);
+    final credentials = await getIt<GetCredentialsUsecase>()();
+    if (credentials == null) {
+      throw const FTPException('No credentials found', FTPExceptionType.authentication);
+    }
+    await ftpDatasource.deleteFolder(credentials, remoteFolderPath);
   }
 
   @override
   Future<String> downloadFile(
       String remoteFilePath, String localDirectoryPath) async {
-    final creds = await _creds();
-    if (creds == null) throw Exception('No credentials');
+    final credentials = await getIt<GetCredentialsUsecase>()();
+    if (credentials == null) {
+      throw const FTPException('No credentials found', FTPExceptionType.authentication);
+    }
 
     if (!await networkInfo.isConnected) {
-      throw Exception('No internet connection');
+      throw const FTPException('No internet connection', FTPExceptionType.connection);
     }
 
     return await ftpDatasource.downloadFile(
-        creds, remoteFilePath, localDirectoryPath);
+        credentials, remoteFilePath, localDirectoryPath);
   }
 }

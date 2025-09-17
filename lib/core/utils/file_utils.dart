@@ -1,6 +1,5 @@
 import 'dart:io';
 import 'dart:typed_data';
-import 'package:file_saver/file_saver.dart';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
@@ -390,20 +389,7 @@ class FileUtils {
     return Colors.grey[400]!;
   }
 
-  static MimeType getMimeType(String? ext) {
-    if (ext == null) return MimeType.other;
-    const mimeMap = {
-      'jpg': MimeType.jpeg,
-      'jpeg': MimeType.jpeg,
-      'png': MimeType.png,
-      'gif': MimeType.gif,
-      'pdf': MimeType.pdf,
-      'zip': MimeType.zip,
-      'mp3': MimeType.mp3,
-      'mp4': MimeType.mp4Video,
-    };
-    return mimeMap[ext.toLowerCase()] ?? MimeType.other;
-  }
+  
 
   static Future<String?> saveToDownloads(
       String fileName, List<int> bytes) async {
@@ -451,17 +437,7 @@ class FileUtils {
 
       return filePath;
     } catch (e) {
-      try {
-        await FileSaver.instance.saveFile(
-          name: fileName,
-          bytes: Uint8List.fromList(bytes),
-          fileExtension: path.extension(fileName).replaceFirst('.', ''),
-          mimeType: getMimeType(path.extension(fileName)),
-        );
-        return 'FileSaver location';
-      } catch (e2) {
-        return null;
-      }
+      return null;
     }
   }
 }

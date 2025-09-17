@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:io' show Directory, File, Platform;
 
 import 'package:device_info_plus/device_info_plus.dart';
-import 'package:file_saver/file_saver.dart';
 import 'package:file_upload/core/utils/app_logger.dart';
 import 'package:file_upload/core/utils/file_utils.dart';
 import 'package:file_upload/core/utils/permission_utils.dart';
@@ -10,6 +9,8 @@ import 'package:file_upload/features/authentication/domain/entities/ftp_credenti
 import 'package:file_upload/features/authentication/presentation/viewmodels/auth_viewmodel.dart';
 import 'package:file_upload/features/file_manager/data/datasources/ftp_datasource.dart';
 import 'package:file_upload/features/file_manager/domain/usecases/generate_link_usecase.dart';
+import 'package:file_upload/features/file_manager/domain/usecases/rename_file_usecase.dart';
+import 'package:file_upload/features/file_manager/domain/usecases/rename_folder_usecase.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -42,6 +43,9 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
   bool _loading = true;
   List<FTPFolder> _folders = const [];
   List<FTPFile> _files = const [];
+  List<FTPFolder> _filteredFolders = const [];
+  List<FTPFile> _filteredFiles = const [];
+  String _searchQuery = '';
   String? _error;
   double _downloadProgress = 0.0;
   bool _isDownloading = false;
@@ -64,6 +68,8 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
         setState(() {
           _folders = results[0] as List<FTPFolder>;
           _files = results[1] as List<FTPFile>;
+          _filteredFolders = _folders;
+          _filteredFiles = _files;
           _loading = false;
           _error = null;
         });
@@ -120,6 +126,95 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
               foregroundColor: Colors.white,
             ),
             child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _search(String query) {
+    setState(() {
+      _searchQuery = query;
+      
+      if (query.isEmpty) {
+        _filteredFolders = _folders;
+        _filteredFiles = _files;
+      } else {
+        _filteredFolders = _folders.where((folder) => 
+          folder.name.toLowerCase().contains(query.toLowerCase())
+        ).toList();
+        
+        _filteredFiles = _files.where((file) => 
+          file.name.toLowerCase().contains(query.toLowerCase())
+        ).toList();
+      }
+    });
+  }
+
+  Future<void> _renameItem(String oldPath, String name, bool isFolder) async {
+    final newName = await _showRenameDialog(name);
+    if (newName == null || newName.trim().isEmpty || newName == name) return;
+
+    try {
+      final parentPath = oldPath.substring(0, oldPath.lastIndexOf('/'));
+      final newPath = parentPath.isEmpty ? '/$newName' : '$parentPath/$newName';
+      
+      if (isFolder) {
+        await getIt<RenameFolderUsecase>()(oldPath, newPath);
+      } else {
+        await getIt<RenameFileUsecase>()(oldPath, newPath);
+      }
+      
+      _showSnackBar('$name renamed to $newName successfully', isSuccess: true);
+      _load();
+    } catch (e) {
+      _showSnackBar('Failed to rename: $e', isSuccess: false);
+    }
+  }
+
+  Future<String?> _showRenameDialog(String currentName) async {
+    final controller = TextEditingController(text: currentName);
+    return showDialog<String?>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppColors.darkSurface.withOpacity(0.9),
+        surfaceTintColor: Colors.transparent,
+        title: const Text('Rename', style: TextStyle(color: Colors.white)),
+        content: TextField(
+          controller: controller,
+          style: const TextStyle(color: Colors.white),
+          decoration: InputDecoration(
+            labelText: 'New name',
+            labelStyle: const TextStyle(color: Colors.white70),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(color: AppColors.primaryLight.withOpacity(0.3)),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(color: AppColors.primaryLight.withOpacity(0.3)),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: AppColors.primaryLight, width: 2),
+            ),
+            filled: true,
+            fillColor: AppColors.darkSurface.withOpacity(0.8),
+          ),
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel', style: TextStyle(color: Colors.white70)),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, controller.text.trim()),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Rename'),
           ),
         ],
       ),
@@ -403,7 +498,7 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Icon(
-                  _getFileIcon(downloadingFile?.extension),
+                  FileUtils.getFileIcon(downloadingFile?.extension),
                   color: FileUtils.getFileIconColor(downloadingFile?.extension),
                   size: 24,
                 ),
@@ -579,79 +674,7 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
     }
   }
 
-  IconData _getFileIcon(String? ext) {
-    if (ext == null) return Icons.insert_drive_file;
-
-    final extension = ext.toLowerCase();
-
-    // Images
-    if (['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg', 'ico']
-        .contains(extension)) {
-      return Icons.image;
-    }
-
-    // Videos
-    if (['mp4', 'avi', 'mov', 'wmv', 'flv', 'webm', 'mkv', '3gp']
-        .contains(extension)) {
-      return Icons.video_file;
-    }
-
-    // Audio
-    if (['mp3', 'wav', 'flac', 'aac', 'ogg', 'wma', 'm4a']
-        .contains(extension)) {
-      return Icons.audio_file;
-    }
-
-    // Documents
-    if (['pdf'].contains(extension)) {
-      return Icons.picture_as_pdf;
-    }
-
-    if (['doc', 'docx'].contains(extension)) {
-      return Icons.description;
-    }
-
-    if (['xls', 'xlsx', 'csv'].contains(extension)) {
-      return Icons.table_chart;
-    }
-
-    if (['ppt', 'pptx'].contains(extension)) {
-      return Icons.slideshow;
-    }
-
-    // Archives
-    if (['zip', 'rar', '7z', 'tar', 'gz', 'bz2'].contains(extension)) {
-      return Icons.archive;
-    }
-
-    // Code files
-    if (['html', 'css', 'js', 'json', 'xml', 'yml', 'yaml']
-        .contains(extension)) {
-      return Icons.code;
-    }
-
-    if (['dart', 'java', 'py', 'cpp', 'c', 'cs', 'php', 'rb', 'swift']
-        .contains(extension)) {
-      return Icons.integration_instructions;
-    }
-
-    // Text files
-    if (['txt', 'rtf', 'md'].contains(extension)) {
-      return Icons.text_snippet;
-    }
-
-    // Executables
-    if (['exe', 'msi', 'dmg', 'pkg', 'deb', 'rpm'].contains(extension)) {
-      return Icons.apps;
-    }
-
-    // Fonts
-    if (['ttf', 'otf', 'woff', 'woff2'].contains(extension)) {
-      return Icons.font_download;
-    }
-
-    return Icons.insert_drive_file;
-  }
+  
 
   // Notify Android's MediaScanner about the new file
   Future<void> _notifyMediaScanner(String filePath) async {
@@ -1094,7 +1117,6 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
           children: [
             if (showProgress)
               CircularProgressIndicator(
-                year2023: false,
                 color: AppColors.primaryLight,
                 backgroundColor: AppColors.darkSurface,
               ),
@@ -1165,6 +1187,9 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
               case 'open':
                 _openInBrowser(folder.fullPath);
                 break;
+              case 'rename':
+                _renameItem(folder.fullPath, folder.name, true);
+                break;
               case 'delete':
                 _deleteItem(folder.fullPath, folder.name, true);
                 break;
@@ -1172,6 +1197,7 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
           },
           itemBuilder: (context) => [
             _buildMenuItem('open', Icons.open_in_browser, 'Open in browser'),
+            _buildMenuItem('rename', Icons.edit, 'Rename'),
             _buildMenuItem('delete', Icons.delete, 'Delete',
                 color: Colors.red[300]),
           ],
@@ -1189,10 +1215,10 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
         border: Border.all(color: AppColors.primaryLight.withOpacity(0.2)),
       ),
       child: ListTile(
-        leading: Icon(_getFileIcon(file.extension),
+        leading: Icon(FileUtils.getFileIcon(file.extension),
             color: FileUtils.getFileIconColor(file.extension)),
         title: Text(file.name, style: const TextStyle(color: Colors.white)),
-        subtitle: Text('${_formatSize(file.size)}',
+        subtitle: Text('${FileUtils.formatSize(file.size)}',
             style: const TextStyle(color: Colors.white70)),
         trailing: PopupMenuButton<String>(
           icon: Icon(Icons.more_vert, color: AppColors.primaryLight),
@@ -1208,6 +1234,9 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
               case 'copy':
                 _copyLink(file.fullPath);
                 break;
+              case 'rename':
+                _renameItem(file.fullPath, file.name, false);
+                break;
               case 'delete':
                 _deleteItem(file.fullPath, file.name, false);
                 break;
@@ -1217,6 +1246,7 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
             _buildMenuItem('download', Icons.download, 'Download'),
             _buildMenuItem('open', Icons.open_in_browser, 'Open in browser'),
             _buildMenuItem('copy', Icons.link, 'Copy link'),
+            _buildMenuItem('rename', Icons.edit, 'Rename'),
             _buildMenuItem('delete', Icons.delete, 'Delete',
                 color: Colors.red[300]),
           ],
@@ -1236,6 +1266,35 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
         foregroundColor: Colors.white,
         iconTheme: IconThemeData(color: AppColors.primaryLight),
         elevation: 0,
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(56),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: TextField(
+              onChanged: _search,
+              style: const TextStyle(color: Colors.white),
+              decoration: InputDecoration(
+                hintText: 'Search files and folders...',
+                hintStyle: const TextStyle(color: Colors.white70),
+                prefixIcon: const Icon(Icons.search, color: Colors.white70),
+                filled: true,
+                fillColor: AppColors.darkSurface.withOpacity(0.8),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none,
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none,
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: AppColors.primaryLight, width: 1),
+                ),
+              ),
+            ),
+          ),
+        ),
       ),
       body: Container(
         decoration: const BoxDecoration(
@@ -1255,7 +1314,6 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
             _loading
                 ? Center(
                     child: CircularProgressIndicator(
-                    year2023: false,
                     color: AppColors.primaryLight,
                     backgroundColor: AppColors.darkSurface,
                   ))
@@ -1278,11 +1336,11 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
                           ),
                         ),
 
-                        if (_folders.isNotEmpty) _buildSectionHeader('Folders'),
-                        ..._folders.map(_buildFolderTile),
-                        if (_files.isNotEmpty) _buildSectionHeader('Files'),
-                        ..._files.map(_buildFileTile),
-                        if (_folders.isEmpty && _files.isEmpty)
+                        if (_filteredFolders.isNotEmpty) _buildSectionHeader('Folders'),
+                        ..._filteredFolders.map(_buildFolderTile),
+                        if (_filteredFiles.isNotEmpty) _buildSectionHeader('Files'),
+                        ..._filteredFiles.map(_buildFileTile),
+                        if (_filteredFolders.isEmpty && _filteredFiles.isEmpty)
                           _buildEmptyState(),
 
                         // Add spacing at bottom for download progress
@@ -1356,6 +1414,25 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
   }
 
   Widget _buildEmptyState() {
+    if (_searchQuery.isNotEmpty) {
+      return Padding(
+        padding: const EdgeInsets.all(40),
+        child: Center(
+          child: Column(
+            children: [
+              Icon(Icons.search_off, size: 64, color: Colors.grey[400]),
+              const SizedBox(height: 16),
+              const Text('No matching items found',
+                  style: TextStyle(color: Colors.white70, fontSize: 18)),
+              const SizedBox(height: 8),
+              Text('No files or folders match your search for "$_searchQuery"',
+                  style: const TextStyle(color: Colors.white54)),
+            ],
+          ),
+        ),
+      );
+    }
+    
     return Padding(
       padding: const EdgeInsets.all(40),
       child: Center(

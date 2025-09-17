@@ -21,6 +21,8 @@ abstract class FTPDatasource {
       FTPCredentials credentials, String remoteFolderPath);
   Future<String> downloadFile(FTPCredentials credentials, String remoteFilePath,
       String localDirectoryPath);
+  Future<void> renameFile(FTPCredentials credentials, String oldPath, String newPath);
+  Future<void> renameFolder(FTPCredentials credentials, String oldPath, String newPath);
 }
 
 class FTPDatasourceImpl implements FTPDatasource {
@@ -77,7 +79,11 @@ class FTPDatasourceImpl implements FTPDatasource {
       final entries = await ftp.listDirectoryContent();
       final folders = entries
           .where((e) => e.type == FTPEntryType.DIR)
-          .map((e) => FTPFolder(name: e.name ?? '', path: path))
+          .map((e) => FTPFolder(
+                name: e.name ?? '', 
+                path: path,
+                // createdDate: e.modifiedDate, // Comment out since modifiedDate may not exist
+              ))
           .toList();
       return folders;
     } finally {
@@ -93,11 +99,21 @@ class FTPDatasourceImpl implements FTPDatasource {
       final entries = await ftp.listDirectoryContent();
       final files = entries
           .where((e) => e.type == FTPEntryType.FILE)
-          .map((e) => FTPFile(
-                name: e.name ?? '',
-                path: path,
-                type: FTPFileType.file,
-              ))
+          .map((e) {
+            // Extract file extension
+            final fileName = e.name ?? '';
+            final lastDotIndex = fileName.lastIndexOf('.');
+            final extension = lastDotIndex > 0 ? fileName.substring(lastDotIndex + 1) : null;
+            
+            return FTPFile(
+              name: fileName,
+              path: path,
+              type: FTPFileType.file,
+              size: e.size ?? 0,
+              // modifiedDate: e.modifiedDate, // Comment out since modifiedDate may not exist
+              extension: extension,
+            );
+          })
           .toList();
       return files;
     } finally {
@@ -248,27 +264,50 @@ class FTPDatasourceImpl implements FTPDatasource {
   }
 
   @override
-  Future<String> downloadFileWithRetry(FTPCredentials credentials,
-      String remoteFilePath, String localDirectoryPath,
-      {int maxRetries = 3}) async {
-    Exception? lastException;
+  Future<void> renameFile(FTPCredentials credentials, String oldPath, String newPath) async {
+    final ftpConnect = FTPConnect(
+      credentials.hostname,
+      user: credentials.username,
+      pass: credentials.password,
+      port: credentials.port,
+    );
 
-    for (int attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      await ftpConnect.connect();
+      // Send RNFR command (Rename From)
+      await ftpConnect.sendCustomCommand('RNFR $oldPath');
+      // Send RNTO command (Rename To)
+      await ftpConnect.sendCustomCommand('RNTO $newPath');
+    } finally {
       try {
-        return await downloadFile(
-            credentials, remoteFilePath, localDirectoryPath);
+        await ftpConnect.disconnect();
       } catch (e) {
-        lastException = e is Exception ? e : Exception(e.toString());
-        print('Download attempt $attempt failed: $e');
-        if (attempt < maxRetries) {
-          // Wait before retry (exponential backoff)
-          await Future.delayed(Duration(seconds: attempt * 2));
-          continue;
-        }
+        print('Error disconnecting: $e');
       }
     }
+  }
 
-    throw lastException ??
-        Exception('Download failed after $maxRetries attempts');
+  @override
+  Future<void> renameFolder(FTPCredentials credentials, String oldPath, String newPath) async {
+    final ftpConnect = FTPConnect(
+      credentials.hostname,
+      user: credentials.username,
+      pass: credentials.password,
+      port: credentials.port,
+    );
+
+    try {
+      await ftpConnect.connect();
+      // Send RNFR command (Rename From)
+      await ftpConnect.sendCustomCommand('RNFR $oldPath');
+      // Send RNTO command (Rename To)
+      await ftpConnect.sendCustomCommand('RNTO $newPath');
+    } finally {
+      try {
+        await ftpConnect.disconnect();
+      } catch (e) {
+        print('Error disconnecting: $e');
+      }
+    }
   }
 }

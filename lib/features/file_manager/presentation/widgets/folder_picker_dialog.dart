@@ -63,9 +63,7 @@ class _FolderPickerDialogState extends State<FolderPickerDialog> {
             ? const Center(
                 child: Padding(
                     padding: EdgeInsets.all(16),
-                    child: CircularProgressIndicator(
-                      year2023: false,
-                    )))
+                    child: CircularProgressIndicator(),))
             : Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,

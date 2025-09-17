@@ -93,7 +93,6 @@ class FileManagerScreen extends ConsumerWidget {
         child: state.loading
             ? Center(
                 child: CircularProgressIndicator(
-                  year2023: false,
                   color: AppColors.primaryLight,
                   backgroundColor: AppColors.darkSurface,
                 ),
@@ -199,7 +198,7 @@ class FileManagerScreen extends ConsumerWidget {
                                 Icon(Icons.folder, color: Colors.amber[300]),
                             title: Text(f.name,
                                 style: const TextStyle(color: Colors.white)),
-                            subtitle: Text('Folder • ${f.totalFiles} files',
+                            subtitle: Text('${f.totalFiles} files',
                                 style: const TextStyle(color: Colors.white70)),
                             onTap: () => context
                                 .go(RouteNames.folderBrowserPath(f.fullPath)),

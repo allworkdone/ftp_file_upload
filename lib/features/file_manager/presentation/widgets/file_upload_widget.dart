@@ -13,6 +13,7 @@ import '../../domain/usecases/generate_link_usecase.dart';
 import '../../domain/entities/ftp_folder.dart';
 import '../../presentation/viewmodels/upload_viewmodel.dart';
 import '../../../../core/di/injection.dart';
+import '../../../../core/utils/file_utils.dart';
 import 'folder_picker_dialog.dart';
 import '../../../../app/theme/app_colors.dart'; // Import your purple theme
 
@@ -399,7 +400,6 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
             if (_isProcessingBundle) ...[
               CircularProgressIndicator(
                 color: AppColors.primaryLight,
-                year2023: false,
               ),
               const SizedBox(height: 16),
               const Text('Converting directory to zip...',
@@ -418,7 +418,7 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
                     ? 'Release to add file or directory'
                     : (_picked == null
                         ? 'Drag & drop files/directories here'
-                        : _picked!.name),
+                        : '${_picked!.name} (${FileUtils.formatSize(_picked!.size)})'),
                 style: TextStyle(
                   color: _isDragging ? AppColors.primaryLight : Colors.white70,
                   fontWeight: _isDragging ? FontWeight.w600 : FontWeight.normal,
@@ -722,7 +722,6 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
             if (upload.uploading) ...[
               const SizedBox(height: 20),
               LinearProgressIndicator(
-                year2023: false,
                 value: upload.progress?.progressPercentage != null
                     ? upload.progress!.progressPercentage / 100.0
                     : null,
@@ -738,7 +737,7 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
               Text(
                 upload.progress == null
                     ? 'Starting…'
-                    : '${upload.progress!.fileName} — ${upload.progress!.progressPercentage.toStringAsFixed(0)}%',
+                    : '${upload.progress!.fileName} — ${FileUtils.formatSize(upload.progress!.uploadedBytes)} / ${FileUtils.formatSize(upload.progress!.totalBytes)} (${upload.progress!.progressPercentage.toStringAsFixed(0)}%)',
                 style: const TextStyle(color: Colors.white70),
                 textAlign: TextAlign.center,
               ),
