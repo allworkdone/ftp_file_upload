@@ -38,6 +38,7 @@ import '../../features/file_manager/domain/usecases/generate_link_usecase.dart';
 import '../../features/file_manager/domain/usecases/get_files_usecase.dart';
 import '../../features/file_manager/domain/usecases/rename_file_usecase.dart';
 import '../../features/file_manager/domain/usecases/rename_folder_usecase.dart';
+import '../../features/file_manager/domain/usecases/search_files_usecase.dart';
 
 // Upload history
 import '../../features/upload_history/data/datasources/upload_history_local_datasource.dart';
@@ -219,6 +220,10 @@ Future<void> configureDependencies() async {
 
   getIt.registerLazySingleton<RenameFolderUsecase>(
     () => RenameFolderUsecase(getIt<FileManagerRepository>()),
+  );
+
+  getIt.registerLazySingleton<SearchFilesUsecase>(
+    () => SearchFilesUsecase(getIt<FileManagerRepository>()),
   );
 
   AppLogger.info('Dependency injection setup completed');

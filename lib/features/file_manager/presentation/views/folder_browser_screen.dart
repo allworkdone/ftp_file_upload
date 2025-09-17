@@ -5,12 +5,14 @@ import 'package:device_info_plus/device_info_plus.dart';
 import 'package:file_upload/core/utils/app_logger.dart';
 import 'package:file_upload/core/utils/file_utils.dart';
 import 'package:file_upload/core/utils/permission_utils.dart';
+import 'package:file_upload/core/utils/cancel_token.dart';
 import 'package:file_upload/features/authentication/domain/entities/ftp_credentials.dart';
 import 'package:file_upload/features/authentication/presentation/viewmodels/auth_viewmodel.dart';
 import 'package:file_upload/features/file_manager/data/datasources/ftp_datasource.dart';
 import 'package:file_upload/features/file_manager/domain/usecases/generate_link_usecase.dart';
 import 'package:file_upload/features/file_manager/domain/usecases/rename_file_usecase.dart';
 import 'package:file_upload/features/file_manager/domain/usecases/rename_folder_usecase.dart';
+import 'package:file_upload/features/file_manager/domain/usecases/search_files_usecase.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -41,15 +43,19 @@ class FolderBrowserScreen extends ConsumerStatefulWidget {
 
 class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
   bool _loading = true;
+  bool _searching = false;
   List<FTPFolder> _folders = const [];
   List<FTPFile> _files = const [];
   List<FTPFolder> _filteredFolders = const [];
   List<FTPFile> _filteredFiles = const [];
+  List<SearchResult> _searchResults = const [];
   String _searchQuery = '';
   String? _error;
   double _downloadProgress = 0.0;
   bool _isDownloading = false;
   String _downloadingFileName = '';
+  CancelToken? _searchCancelToken;
+  Timer? _searchDebounceTimer;
 
   @override
   void initState() {
@@ -133,13 +139,42 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
   }
 
   void _search(String query) {
+    // Cancel any existing debounce timer
+    _searchDebounceTimer?.cancel();
+    
     setState(() {
       _searchQuery = query;
-      
-      if (query.isEmpty) {
-        _filteredFolders = _folders;
-        _filteredFiles = _files;
-      } else {
+    });
+
+    // If query is empty, clear search results immediately
+    if (query.isEmpty) {
+      _searchDebounceTimer = Timer(Duration.zero, () {
+        if (mounted) {
+          setState(() {
+            _filteredFolders = _folders;
+            _filteredFiles = _files;
+            _searchResults = const [];
+            _searching = false;
+          });
+        }
+      });
+      return;
+    }
+
+    // Debounce the search to avoid too many requests
+    _searchDebounceTimer = Timer(const Duration(milliseconds: 300), () {
+      _performSearch(query);
+    });
+  }
+
+  void _performSearch(String query) async {
+    // Cancel any ongoing search
+    _searchCancelToken?.cancel();
+    _searchCancelToken = CancelToken();
+
+    // For short queries, search only in current folder
+    if (query.length < 3) {
+      setState(() {
         _filteredFolders = _folders.where((folder) => 
           folder.name.toLowerCase().contains(query.toLowerCase())
         ).toList();
@@ -147,8 +182,43 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
         _filteredFiles = _files.where((file) => 
           file.name.toLowerCase().contains(query.toLowerCase())
         ).toList();
-      }
+        
+        _searchResults = const [];
+        _searching = false;
+      });
+      return;
+    }
+
+    // For longer queries, perform recursive search
+    setState(() {
+      _searching = true;
+      _filteredFolders = const [];
+      _filteredFiles = const [];
     });
+
+    try {
+      final results = await getIt<SearchFilesUsecase>()(query, widget.folderPath);
+      if (mounted && !_searchCancelToken!.isCancelled) {
+        setState(() {
+          _searchResults = results;
+          _searching = false;
+        });
+      }
+    } catch (e) {
+      if (mounted && !_searchCancelToken!.isCancelled) {
+        setState(() {
+          _searchResults = const [];
+          _searching = false;
+          _error = 'Search failed: $e';
+        });
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _searchCancelToken?.cancel();
+    super.dispose();
   }
 
   Future<void> _renameItem(String oldPath, String name, bool isFolder) async {
@@ -1270,28 +1340,50 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
           preferredSize: const Size.fromHeight(56),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: TextField(
-              onChanged: _search,
-              style: const TextStyle(color: Colors.white),
-              decoration: InputDecoration(
-                hintText: 'Search files and folders...',
-                hintStyle: const TextStyle(color: Colors.white70),
-                prefixIcon: const Icon(Icons.search, color: Colors.white70),
-                filled: true,
-                fillColor: AppColors.darkSurface.withOpacity(0.8),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    onChanged: _search,
+                    style: const TextStyle(color: Colors.white),
+                    decoration: InputDecoration(
+                      hintText: 'Search files and folders...',
+                      hintStyle: const TextStyle(color: Colors.white70),
+                      prefixIcon: const Icon(Icons.search, color: Colors.white70),
+                      filled: true,
+                      fillColor: AppColors.darkSurface.withOpacity(0.8),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide.none,
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide.none,
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: AppColors.primaryLight, width: 1),
+                      ),
+                    ),
+                  ),
                 ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(color: AppColors.primaryLight, width: 1),
-                ),
-              ),
+                if (_searching)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 8.0),
+                    child: IconButton(
+                      icon: Icon(Icons.cancel, color: Colors.white70),
+                      onPressed: () {
+                        _searchCancelToken?.cancel();
+                        setState(() {
+                          _searching = false;
+                          _searchResults = const [];
+                          _searchQuery = '';
+                        });
+                        _showSnackBar('Search cancelled', isSuccess: true);
+                      },
+                    ),
+                  ),
+              ],
             ),
           ),
         ),
@@ -1336,11 +1428,24 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
                           ),
                         ),
 
-                        if (_filteredFolders.isNotEmpty) _buildSectionHeader('Folders'),
-                        ..._filteredFolders.map(_buildFolderTile),
-                        if (_filteredFiles.isNotEmpty) _buildSectionHeader('Files'),
-                        ..._filteredFiles.map(_buildFileTile),
-                        if (_filteredFolders.isEmpty && _filteredFiles.isEmpty)
+                        // Show search results when searching
+                        if (_searchQuery.isNotEmpty && _searchResults.isNotEmpty) ...[
+                          _buildSectionHeader('Search Results (${_searchResults.length})'),
+                          ..._searchResults.map(_buildSearchResultTile),
+                        ] else if (_searching) ...[
+                          _buildSectionHeader('Searching...'),
+                          _buildEmptyState(),
+                        ] else ...[
+                          if (_filteredFolders.isNotEmpty) _buildSectionHeader('Folders'),
+                          ..._filteredFolders.map(_buildFolderTile),
+                          if (_filteredFiles.isNotEmpty) _buildSectionHeader('Files'),
+                          ..._filteredFiles.map(_buildFileTile),
+                        ],
+                        
+                        if (_filteredFolders.isEmpty && 
+                            _filteredFiles.isEmpty && 
+                            _searchResults.isEmpty &&
+                            !_searching)
                           _buildEmptyState(),
 
                         // Add spacing at bottom for download progress
@@ -1413,8 +1518,103 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
     );
   }
 
+  Widget _buildSearchResultTile(SearchResult result) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      decoration: BoxDecoration(
+        color: AppColors.darkSurface.withOpacity(0.6),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.primaryLight.withOpacity(0.2)),
+      ),
+      child: ListTile(
+        leading: Icon(
+          result.isFile ? FileUtils.getFileIcon(result.extension) : Icons.folder,
+          color: result.isFile 
+            ? FileUtils.getFileIconColor(result.extension) 
+            : Colors.amber[300],
+        ),
+        title: Text(result.name, style: const TextStyle(color: Colors.white)),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (result.isFile) 
+              Text('${FileUtils.formatSize(result.size ?? 0)}',
+                  style: const TextStyle(color: Colors.white70)),
+            Text(result.parentPath,
+                style: const TextStyle(color: Colors.white54, fontSize: 12)),
+          ],
+        ),
+        onTap: () {
+          if (result.isFile) {
+            // For files, we might want to download or open them
+            // For now, let's just show a snackbar
+            _showSnackBar('File found in ${result.parentPath}', isSuccess: true);
+          } else {
+            // For folders, navigate to the folder
+            context.push(RouteNames.folderBrowserPath(result.path));
+          }
+        },
+        trailing: PopupMenuButton<String>(
+          icon: Icon(Icons.more_vert, color: AppColors.primaryLight),
+          color: AppColors.darkSurface,
+          onSelected: (value) async {
+            switch (value) {
+              case 'navigate':
+                if (result.isFile) {
+                  // For files, navigate to parent folder
+                  context.push(RouteNames.folderBrowserPath(result.parentPath));
+                } else {
+                  // For folders, navigate to the folder
+                  context.push(RouteNames.folderBrowserPath(result.path));
+                }
+                break;
+              case 'download':
+                if (result.isFile) {
+                  // Create a temporary FTPFile for download
+                  final file = FTPFile(
+                    name: result.name,
+                    path: result.parentPath,
+                    type: FTPFileType.file,
+                    size: result.size ?? 0,
+                    extension: result.extension,
+                  );
+                  _downloadFile(file);
+                }
+                break;
+            }
+          },
+          itemBuilder: (context) => [
+            _buildMenuItem('navigate', Icons.open_in_browser, 'Go to location'),
+            if (result.isFile) _buildMenuItem('download', Icons.download, 'Download'),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildEmptyState() {
     if (_searchQuery.isNotEmpty) {
+      if (_searching) {
+        return Padding(
+          padding: const EdgeInsets.all(40),
+          child: Center(
+            child: Column(
+              children: [
+                CircularProgressIndicator(
+                  color: AppColors.primaryLight,
+                ),
+                const SizedBox(height: 16),
+                const Text('Searching...',
+                    style: TextStyle(color: Colors.white70, fontSize: 18)),
+                const SizedBox(height: 8),
+                Text('Looking for "$_searchQuery" in all folders',
+                    style: const TextStyle(color: Colors.white54)),
+              ],
+            ),
+          ),
+        );
+      }
+      
       return Padding(
         padding: const EdgeInsets.all(40),
         child: Center(
