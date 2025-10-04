@@ -34,14 +34,18 @@ class FileManagerRepositoryImpl implements FileManagerRepository {
 
   @override
   Future<List<FTPFolder>> getFolders(String path) async {
+    print('FileManagerRepositoryImpl.getFolders: Attempting to get folders for path: $path');
     final creds = await _creds();
+    print('FileManagerRepositoryImpl.getFolders: Retrieved credentials: ${creds != null}');
     if (creds == null) throw Exception('No credentials');
     return ftpDatasource.listFolders(creds, path);
-  }
+ }
 
   @override
   Future<List<FTPFile>> getFiles(String path) async {
+    print('FileManagerRepositoryImpl.getFiles: Attempting to get files for path: $path');
     final creds = await _creds();
+    print('FileManagerRepositoryImpl.getFiles: Retrieved credentials: ${creds != null}');
     if (creds == null) throw Exception('No credentials');
     return ftpDatasource.listFiles(creds, path);
   }

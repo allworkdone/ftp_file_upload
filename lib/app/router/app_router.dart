@@ -4,8 +4,7 @@ import 'package:flutter/material.dart';
 import 'route_names.dart';
 import '../../features/authentication/presentation/views/login_screen.dart';
 import '../../features/authentication/presentation/views/connection_setup_screen.dart';
-import '../../features/file_manager/presentation/views/file_manager_screen.dart';
-import '../../features/file_manager/presentation/views/folder_browser_screen.dart';
+import '../../features/file_manager/presentation/views/unified_file_manager_screen.dart';
 import '../../features/file_manager/presentation/views/upload_screen.dart';
 import '../../features/upload_history/presentation/views/upload_history_screen.dart';
 import '../../features/settings/presentation/views/settings_screen.dart';
@@ -34,23 +33,18 @@ class AppRouter {
         GoRoute(
           path: RouteNames.fileManager,
           name: RouteNames.fileManager,
-          builder: (context, state) => const FileManagerScreen(),
+          builder: (context, state) {
+            // Check if there's a path parameter in the query
+            final initialPath = state.uri.queryParameters['path'] ?? '/';
+            return UnifiedFileManagerScreen(initialPath: initialPath);
+          },
           routes: [
-            GoRoute(
-              path: 'folder/:folderPath',
-              name: RouteNames.folderBrowser,
-              builder: (context, state) {
-                final raw = state.pathParameters['folderPath'] ?? '';
-                final folderPath = Uri.decodeComponent(raw);
-                return FolderBrowserScreen(folderPath: folderPath);
-              },
-            ),
             GoRoute(
               path: 'upload',
               name: RouteNames.upload,
               builder: (context, state) {
                 final folderPath =
-                    state.uri.queryParameters['folderPath'] ?? '';
+                    state.uri.queryParameters['folderPath'] ?? '/';
                 return UploadScreen(targetFolderPath: folderPath);
               },
             ),

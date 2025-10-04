@@ -5,7 +5,6 @@ class RouteNames {
   
   // Main App Routes
   static const String fileManager = '/file-manager';
-  static const String folderBrowser = 'folder';
   static const String upload = 'upload';
   
   // Feature Routes
@@ -13,13 +12,18 @@ class RouteNames {
   static const String settings = '/settings';
   
   // Utility methods
-  static String folderBrowserPath(String folderPath) =>
-      '/file-manager/folder/${Uri.encodeComponent(folderPath)}';
+  static String fileManagerPath({String? path}) {
+    final basePath = '/file-manager';
+    if (path != null && path.isNotEmpty && path != '/') {
+      return '$basePath?path=${Uri.encodeComponent(path)}';
+    }
+    return basePath;
+  }
   
   static String uploadPath({String? folderPath}) {
     final path = '/file-manager/upload';
     if (folderPath != null && folderPath.isNotEmpty) {
-      return '$path?folderPath=${Uri.encodeQueryComponent(folderPath)}';
+      return '$path?folderPath=${Uri.encodeComponent(folderPath)}';
     }
     return path;
   }

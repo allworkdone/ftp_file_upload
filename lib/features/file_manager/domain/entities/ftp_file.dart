@@ -42,9 +42,9 @@ class FTPFile extends Equatable {
   bool get isFile => type == FTPFileType.file;
 
   String get fullPath {
-    if (path.isEmpty) return name;
-    if (path.endsWith('/')) return '$path$name';
-    return '$path/$name';
+    // The path property already contains the full path to the file
+    // No need to concatenate with name
+    return path;
   }
 
   @override

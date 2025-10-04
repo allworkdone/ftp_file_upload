@@ -9,6 +9,7 @@
 #include <connectivity_plus/connectivity_plus_windows_plugin.h>
 #include <desktop_drop/desktop_drop_plugin.h>
 #include <file_saver/file_saver_plugin.h>
+#include <flutter_ftp_client/flutter_ftp_client_plugin_c_api.h>
 #include <permission_handler_windows/permission_handler_windows_plugin.h>
 #include <url_launcher_windows/url_launcher_windows.h>
 
@@ -19,6 +20,8 @@ void RegisterPlugins(flutter::PluginRegistry* registry) {
       registry->GetRegistrarForPlugin("DesktopDropPlugin"));
   FileSaverPluginRegisterWithRegistrar(
       registry->GetRegistrarForPlugin("FileSaverPlugin"));
+  FlutterFtpClientPluginCApiRegisterWithRegistrar(
+      registry->GetRegistrarForPlugin("FlutterFtpClientPluginCApi"));
   PermissionHandlerWindowsPluginRegisterWithRegistrar(
       registry->GetRegistrarForPlugin("PermissionHandlerWindowsPlugin"));
   UrlLauncherWindowsRegisterWithRegistrar(

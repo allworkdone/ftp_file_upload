@@ -15,7 +15,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
-import 'package:permission_handler/permission_handler.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../app/router/route_names.dart';
@@ -28,19 +27,21 @@ import '../../../file_manager/domain/usecases/delete_folder_usecase.dart';
 import '../../../file_manager/domain/usecases/get_files_usecase.dart';
 import '../../../file_manager/domain/usecases/get_folders_usecase.dart';
 
-class FolderBrowserScreen extends ConsumerStatefulWidget {
-  final String folderPath;
-  const FolderBrowserScreen({super.key, required this.folderPath});
+class UnifiedFileManagerScreen extends ConsumerStatefulWidget {
+  final String initialPath;
+  const UnifiedFileManagerScreen({super.key, this.initialPath = '/'});
 
   @override
-  ConsumerState<FolderBrowserScreen> createState() =>
-      _FolderBrowserScreenState();
+  ConsumerState<UnifiedFileManagerScreen> createState() =>
+      _UnifiedFileManagerScreenState();
 }
 
-class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
+class _UnifiedFileManagerScreenState
+    extends ConsumerState<UnifiedFileManagerScreen> {
   bool _loading = true;
   List<FTPFolder> _folders = const [];
   List<FTPFile> _files = const [];
+  String _currentPath = '/';
   String? _error;
   double _downloadProgress = 0.0;
   bool _isDownloading = false;
@@ -49,25 +50,36 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
   @override
   void initState() {
     super.initState();
+    _currentPath = widget.initialPath;
     _load();
   }
 
   Future<void> _load() async {
+    print(
+        'UnifiedFileManagerScreen._load: Attempting to load path: $_currentPath');
     setState(() => _loading = true);
     try {
-      final results = await Future.wait([
-        getIt<GetFoldersUsecase>()(widget.folderPath),
-        getIt<GetFilesUsecase>()(widget.folderPath),
-      ]);
+      final auth = ref.read(authViewModelProvider);
+      if (auth.credentials == null) {
+        throw Exception('No FTP credentials available');
+      }
+
+      // Load folders and files sequentially to avoid connection conflicts
+      final folders = await getIt<GetFoldersUsecase>()(_currentPath);
+      final files = await getIt<GetFilesUsecase>()(_currentPath);
+
       if (mounted) {
         setState(() {
-          _folders = results[0] as List<FTPFolder>;
-          _files = results[1] as List<FTPFile>;
+          _folders = folders as List<FTPFolder>;
+          _files = files as List<FTPFile>;
+          print(
+              'UnifiedFileManagerScreen._load: Loaded ${_folders.length} folders and ${_files.length} files');
           _loading = false;
           _error = null;
         });
       }
     } catch (e) {
+      print('UnifiedFileManagerScreen._load: Error loading: $e');
       if (mounted) {
         setState(() {
           _loading = false;
@@ -125,7 +137,7 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
     );
   }
 
-// Show rationale dialog explaining why permission is needed
+  // Show rationale dialog explaining why permission is needed
   Future<bool> _showPermissionRationaleDialog() async {
     return await showDialog<bool>(
           context: context,
@@ -322,7 +334,7 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
     }
   }
 
-// Modified FTP download with progress tracking
+  // Modified FTP download with progress tracking
   Future<String> _downloadFileWithProgress(
     FTPDatasource ftpDatasource,
     FTPCredentials credentials,
@@ -358,7 +370,7 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
     return completer.future;
   }
 
-// Widget to show download progress
+  // Widget to show download progress
   Widget _buildDownloadProgress() {
     if (!_isDownloading) return SizedBox.shrink();
 
@@ -430,7 +442,7 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
     return 'Complete!';
   }
 
-// Save file to Downloads folder with proper accessibility
+  // Save file to Downloads folder with proper accessibility
   Future<String?> _saveToDownloads(String fileName, List<int> bytes) async {
     try {
       Directory? downloadsDir;
@@ -530,7 +542,7 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
     }
   }
 
-// Notify Android's MediaScanner about the new file
+  // Notify Android's MediaScanner about the new file
   Future<void> _notifyMediaScanner(String filePath) async {
     try {
       if (Platform.isAndroid) {
@@ -544,7 +556,7 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
     }
   }
 
-// Show dialog with download location
+  // Show dialog with download location
   _showDownloadCompleteDialog(String filePath) async {
     await showDialog(
       context: context,
@@ -662,7 +674,7 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
     );
   }
 
-// Alternative method to open file manager using system intents
+  // Alternative method to open file manager using system intents
   Future<void> _openFileManagerAlternative() async {
     if (Platform.isAndroid) {
       bool opened = false;
@@ -722,7 +734,7 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
     }
   }
 
-// Show help dialog with manual instructions
+  // Show help dialog with manual instructions
   Future<void> _showFileManagerHelpDialog() async {
     final deviceInfo = DeviceInfoPlugin();
     String deviceBrand = 'your device';
@@ -884,7 +896,7 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
     }
   }
 
-// Copy file path to clipboard
+  // Copy file path to clipboard
   Future<void> _copyFilePathToClipboard(String filePath) async {
     try {
       await Clipboard.setData(ClipboardData(text: filePath));
@@ -892,27 +904,6 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
     } catch (e) {
       AppLogger.error('Could not copy to clipboard', e);
       _showSnackBar('Could not copy path', isSuccess: false);
-    }
-  }
-
-// Open file manager (Android)
-  Future<void> _openFileManager() async {
-    if (Platform.isAndroid) {
-      try {
-        const platform = MethodChannel('com.yourapp.file_manager');
-        await platform.invokeMethod('openFileManager');
-      } catch (e) {
-        // Fallback: try to open Downloads folder via URL
-        try {
-          final Uri uri = Uri.parse(
-              'content://com.android.externalstorage.documents/document/primary%3ADownload');
-          if (await canLaunchUrl(uri)) {
-            await launchUrl(uri);
-          }
-        } catch (e2) {
-          _showSnackBar('Could not open file manager', isSuccess: false);
-        }
-      }
     }
   }
 
@@ -1041,8 +1032,15 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
         subtitle: Text(
             '${folder.totalFiles} files • ${folder.totalSubFolders} folders',
             style: const TextStyle(color: Colors.white70)),
-        onTap: () =>
-            context.push(RouteNames.fileManagerPath(path: folder.fullPath)),
+        onTap: () {
+          setState(() {
+            // Use the path from the FTPFolder directly as it already contains the full path
+            _currentPath = folder.path;
+            print(
+                'UnifiedFileManagerScreen: Navigating to path: $_currentPath');
+          });
+          _load();
+        },
         trailing: PopupMenuButton<String>(
           icon: Icon(Icons.more_vert, color: AppColors.primaryLight),
           color: AppColors.darkSurface,
@@ -1116,12 +1114,60 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
     return Scaffold(
       backgroundColor: AppColors.darkBackground,
       appBar: AppBar(
-        title: Text(widget.folderPath,
-            style: const TextStyle(color: Colors.white)),
+        title: Text(_currentPath, style: const TextStyle(color: Colors.white)),
         backgroundColor: AppColors.darkSurface,
         foregroundColor: Colors.white,
         iconTheme: IconThemeData(color: AppColors.primaryLight),
         elevation: 0,
+        actions: [
+          IconButton(
+            tooltip: 'Browse Root',
+            icon: Icon(Icons.home, color: AppColors.primaryLight),
+            onPressed: () {
+              setState(() {
+                _currentPath = '/';
+              });
+              _load();
+            },
+          ),
+          PopupMenuButton<String>(
+            color: AppColors.darkSurface,
+            icon: Icon(Icons.more_vert, color: AppColors.primaryLight),
+            onSelected: (value) async {
+              switch (value) {
+                case 'logout':
+                  await _showLogoutDialog(context, ref);
+                  break;
+                case 'settings':
+                  context.push(RouteNames.settings);
+                  break;
+              }
+            },
+            itemBuilder: (context) => [
+              PopupMenuItem(
+                value: 'settings',
+                child: Row(
+                  children: [
+                    Icon(Icons.settings, color: AppColors.primaryLight),
+                    const SizedBox(width: 8),
+                    const Text('Connection Settings',
+                        style: TextStyle(color: Colors.white)),
+                  ],
+                ),
+              ),
+              PopupMenuItem(
+                value: 'logout',
+                child: Row(
+                  children: [
+                    Icon(Icons.logout, color: Colors.red[300]),
+                    const SizedBox(width: 8),
+                    Text('Logout', style: TextStyle(color: Colors.red[300])),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
       body: Container(
         decoration: const BoxDecoration(
@@ -1155,7 +1201,7 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
                       padding: const EdgeInsets.symmetric(
                           horizontal: 20, vertical: 12),
                       child: Text(
-                        'Path: ${widget.folderPath}',
+                        'Path: $_currentPath',
                         style: const TextStyle(
                             color: Colors.white70, fontSize: 12),
                       ),
@@ -1171,8 +1217,7 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
               ),
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: () =>
-            context.go(RouteNames.uploadPath(folderPath: widget.folderPath)),
+        onPressed: () => _showUploadDialog(context),
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
         child: const Icon(Icons.upload, color: Colors.white),
@@ -1293,5 +1338,46 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
       'txt': Colors.grey,
     };
     return colorMap[ext.toLowerCase()]?[300] ?? Colors.grey[400]!;
+  }
+
+  Future<void> _showUploadDialog(BuildContext context) async {
+    final targetPath = _currentPath;
+    context.go(RouteNames.uploadPath(folderPath: targetPath));
+  }
+
+  Future<void> _showLogoutDialog(BuildContext context, WidgetRef ref) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppColors.darkSurface.withOpacity(0.9),
+        surfaceTintColor: Colors.transparent,
+        title: const Text('Logout', style: TextStyle(color: Colors.white)),
+        content: const Text(
+            'Are you sure you want to logout? You will need to login again.',
+            style: TextStyle(color: Colors.white70)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child:
+                const Text('Cancel', style: TextStyle(color: Colors.white70)),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Logout'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      ref.read(authViewModelProvider.notifier).logout();
+      if (context.mounted) {
+        context.go(RouteNames.login);
+      }
+    }
   }
 }

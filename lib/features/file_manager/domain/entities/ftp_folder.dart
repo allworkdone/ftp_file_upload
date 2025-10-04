@@ -33,9 +33,9 @@ class FTPFolder extends Equatable {
   }
 
   String get fullPath {
-    if (path.isEmpty) return name;
-    if (path.endsWith('/')) return '$path$name';
-    return '$path/$name';
+    // The path property already contains the full path to the folder
+    // No need to concatenate with name
+    return path;
   }
 
   int get totalFiles => files.length;

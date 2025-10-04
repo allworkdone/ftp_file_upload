@@ -1,10 +1,8 @@
 import 'dart:io';
-
-import 'package:ftpconnect/ftpconnect.dart';
-
 import '../../../authentication/domain/entities/ftp_credentials.dart';
 import '../../domain/entities/ftp_folder.dart';
 import '../../domain/entities/ftp_file.dart';
+import '../../../../core/services/ftp_service.dart';
 
 abstract class FTPDatasource {
   Future<List<FTPFolder>> listFolders(FTPCredentials creds, String path);
@@ -24,85 +22,75 @@ abstract class FTPDatasource {
 }
 
 class FTPDatasourceImpl implements FTPDatasource {
-  Future<FTPConnect> _client(FTPCredentials c) async {
-    final ftp = FTPConnect(
-      c.hostname,
-      user: c.username,
-      pass: c.password,
-      port: c.port,
-      timeout: 30,
-      securityType: c.isSecure ? SecurityType.FTPS : SecurityType.FTP,
-    );
-    await ftp.connect();
-    // Force binary transfer when available to avoid corruption
-    try {
-      await (ftp as dynamic).setTransferType(TransferType.binary);
-    } catch (e) {
-      print('Failed to set binary transfer type: $e');
-      // Optionally re-throw or handle more explicitly if this is critical
-    }
-    return ftp;
-  }
+  final FTPService _ftpService = FTPService();
 
-  Future<void> _changeTo(FTPConnect ftp, String path) async {
+   @override
+ Future<List<FTPFolder>> listFolders(FTPCredentials creds, String path) async {
+    print('FTPDatasource.listFolders: Attempting to list folders for path: $path');
+    print('FTPDatasource.listFolders: Credentials - Host: ${creds.hostname}, Port: ${creds.port}, Username: ${creds.username}, Secure: ${creds.isSecure}');
+    print('FTPDatasource.listFolders: FTPService connected state: ${_ftpService.isConnected}');
+    
+    // Ensure we're using a proper path format
+    String normalizedPath = _normalizePath(path);
+    print('FTPDatasource.listFolders: Normalized path: $normalizedPath');
+    
     try {
-      if (path.isEmpty || path == '/') {
-        await ftp.changeDirectory('/');
-      } else {
-        await ftp.changeDirectory(path);
-      }
-    } catch (_) {
-      // Ignore if server rejects; we'll try listing current directory
-    }
-  }
-
-  @override
-  Future<void> createFolder(FTPCredentials creds, String path) async {
-    final ftp = await _client(creds);
-    try {
-      // Not all FTP servers support MKD on absolute path; try change dir then create
-      try {
-        await ftp.makeDirectory(path);
-      } catch (_) {}
-    } finally {
-      await ftp.disconnect();
-    }
-  }
-
-  @override
-  Future<List<FTPFolder>> listFolders(FTPCredentials creds, String path) async {
-    final ftp = await _client(creds);
-    try {
-      await _changeTo(ftp, path);
-      final entries = await ftp.listDirectoryContent();
+      // List directory contents
+      final entries = await _ftpService.listDirectory(normalizedPath, creds);
+      
+      // Filter for directories only
       final folders = entries
-          .where((e) => e.type == FTPEntryType.DIR)
-          .map((e) => FTPFolder(name: e.name ?? '', path: path))
+          .where((entry) => entry.isDirectory && entry.name != '.' && entry.name != '..')
+          .map((entry) => FTPFolder(
+                name: entry.name,
+                path: entry.path, // Use the full path from the plugin's FtpFile
+              ))
           .toList();
+      
+      print('FTPDatasource.listFolders: Found ${folders.length} folders');
       return folders;
-    } finally {
-      await ftp.disconnect();
+    } catch (e) {
+      print('FTPDatasource.listFolders: Error listing folders: $e');
+      rethrow;
     }
   }
 
   @override
   Future<List<FTPFile>> listFiles(FTPCredentials creds, String path) async {
-    final ftp = await _client(creds);
+    print('FTPDatasource.listFiles: Attempting to list files for path: $path');
+    print('FTPDatasource.listFiles: Credentials - Host: ${creds.hostname}, Port: ${creds.port}, Username: ${creds.username}, Secure: ${creds.isSecure}');
+    print('FTPDatasource.listFiles: FTPService connected state: ${_ftpService.isConnected}');
+    
+    // Ensure we're using a proper path format
+    String normalizedPath = _normalizePath(path);
+    print('FTPDatasource.listFiles: Normalized path: $normalizedPath');
+    
     try {
-      await _changeTo(ftp, path);
-      final entries = await ftp.listDirectoryContent();
+      // List directory contents
+      final entries = await _ftpService.listDirectory(normalizedPath, creds);
+      
+      // Filter for files only (excluding . and .. which should be directories anyway)
       final files = entries
-          .where((e) => e.type == FTPEntryType.FILE)
-          .map((e) => FTPFile(
-                name: e.name ?? '',
-                path: path,
+          .where((entry) => !entry.isDirectory && entry.name != '.' && entry.name != '..')
+          .map((entry) => FTPFile(
+                name: entry.name,
+                path: entry.path, // Use the full path from the plugin's FtpFile
                 type: FTPFileType.file,
+                size: entry.size,
               ))
           .toList();
+      
+      print('FTPDatasource.listFiles: Found ${files.length} files');
       return files;
-    } finally {
-      await ftp.disconnect();
+    } catch (e) {
+      print('FTPDatasource.listFiles: Error listing files: $e');
+      rethrow;
     }
+ }
+
+  @override
+  Future<void> createFolder(FTPCredentials creds, String path) async {
+    await _ftpService.createDirectory(path, creds);
   }
 
   @override
@@ -112,163 +100,111 @@ class FTPDatasourceImpl implements FTPDatasource {
     String remotePath, {
     dynamic onProgress,
   }) async {
-    final ftp = await _client(creds);
-    try {
-      // remotePath may include directories; change to that directory first
-      String dir = '/';
-      String name = remotePath;
-      final idx = remotePath.replaceAll('\\', '/').lastIndexOf('/');
-      if (idx >= 0) {
-        dir = idx == 0 ? '/' : remotePath.substring(0, idx);
-        name = remotePath.substring(idx + 1);
-      }
-      await _changeTo(ftp, dir);
-      await ftp.uploadFile(
-        file,
-        sRemoteName: name,
-        onProgress: onProgress,
-      );
-    } finally {
-      await ftp.disconnect();
+    // Convert onProgress to the expected format for the new plugin
+    Function(double)? progressCallback;
+    if (onProgress != null) {
+      progressCallback = (progress) {
+        onProgress(progress * 10); // Convert to percentage
+      };
     }
+
+    await _ftpService.uploadFile(
+      localPath: file.path,
+      remotePath: remotePath,
+      onProgress: progressCallback,
+      credentials: creds,
+    );
   }
 
   @override
   Future<void> deleteFile(FTPCredentials creds, String remotePath) async {
-    final ftp = await _client(creds);
-    try {
-      await ftp.deleteFile(remotePath);
-    } finally {
-      await ftp.disconnect();
-    }
+    await _ftpService.deleteFile(remotePath, creds);
   }
 
   @override
   Future<void> deleteFolder(
       FTPCredentials credentials, String remoteFolderPath) async {
-    final ftpConnect = FTPConnect(
-      credentials.hostname,
-      user: credentials.username,
-      pass: credentials.password,
-      port: credentials.port,
-    );
+    // Normalize the path
+    String normalizedPath = _normalizePath(remoteFolderPath);
 
+    // First, list the contents of the folder to delete files/subfolders recursively
     try {
-      await ftpConnect.connect();
+      final contents = await _ftpService.listDirectory(normalizedPath, credentials);
 
-      // First, try to list contents of the folder to delete files/subfolders recursively
-      try {
-        final contents = await ftpConnect.listDirectoryContent();
+      for (final item in contents) {
+        // Use the full path from the plugin's FtpFile
+        String itemPath = item.path;
 
-        for (final item in contents) {
-          final itemPath = remoteFolderPath.endsWith('/')
-              ? '$remoteFolderPath${item.name}'
-              : '$remoteFolderPath/${item.name}';
-
-          if (item.type == FTPEntryType.DIR) {
-            // Recursively delete subdirectory
-            await deleteFolder(credentials, itemPath);
-          } else {
-            // Delete file
-            await ftpConnect.deleteFile(itemPath);
-          }
+        if (item.isDirectory) {
+          // Recursively delete subdirectory
+          await deleteFolder(credentials, itemPath);
+        } else {
+          // Delete file
+          await _ftpService.deleteFile(itemPath, credentials);
         }
-      } catch (e) {
-        // If listing fails, the folder might be empty or inaccessible
-        print('Could not list folder contents: $e');
       }
-
-      // Finally, delete the empty folder
-      await ftpConnect.deleteDirectory(remoteFolderPath);
     } catch (e) {
-      throw Exception('Failed to delete folder: $e');
-    } finally {
-      try {
-        await ftpConnect.disconnect();
-      } catch (e) {
-        print('Error disconnecting: $e');
-      }
+      // If listing fails, the folder might be empty or inaccessible
+      print('Could not list folder contents: $e');
     }
+
+    // Finally, delete the empty folder
+    await _ftpService.deleteDirectory(remoteFolderPath, credentials);
   }
 
   @override
   Future<String> downloadFile(FTPCredentials credentials, String remoteFilePath,
       String localDirectoryPath) async {
-    final ftpConnect = FTPConnect(
-      credentials.hostname,
-      user: credentials.username,
-      pass: credentials.password,
-      port: credentials.port,
+    // Extract filename from remote path
+    final fileName = remoteFilePath.split('/').last;
+    final localFilePath = '$localDirectoryPath/$fileName';
+
+    // Create local file
+    final localFile = File(localFilePath);
+
+    // Ensure parent directory exists
+    await localFile.parent.create(recursive: true);
+
+    print('Attempting to download $remoteFilePath to $localFilePath');
+
+    // Download the file
+    final downloaded = await _ftpService.downloadFile(
+      remotePath: remoteFilePath,
+      localPath: localFilePath,
+      credentials: credentials,
     );
 
-    try {
-      await ftpConnect.connect();
-
-      // Ensure binary transfer type for reliable downloads
-      try {
-        await (ftpConnect as dynamic).setTransferType(TransferType.binary);
-      } catch (e) {
-        print('Failed to set binary transfer type for download: $e');
-        // Continue with download even if setting binary fails, but log it.
-      }
-
-      // Extract filename from remote path
-      final fileName = remoteFilePath.split('/').last;
-      final localFilePath = '$localDirectoryPath/$fileName';
-
-      // Create local file
-      final localFile = File(localFilePath);
-
-      // Ensure parent directory exists
-      await localFile.parent.create(recursive: true);
-
-      print('Attempting to download $remoteFilePath to $localFilePath');
-
-      // Download the file
-      final downloaded =
-          await ftpConnect.downloadFile(remoteFilePath, localFile);
-
-      if (!downloaded) {
-        print('FTPConnect.downloadFile returned false for $remoteFilePath');
-        throw Exception('Failed to download file');
-      }
-
-      print('Successfully downloaded $remoteFilePath to $localFilePath');
-      return localFilePath;
-    } catch (e) {
-      print('Error during file download: $e');
-      throw Exception('Failed to download file: $e');
-    } finally {
-      try {
-        await ftpConnect.disconnect();
-      } catch (e) {
-        print('Error disconnecting FTP client after download: $e');
-      }
+    if (!downloaded) {
+      print('Failed to download file: $remoteFilePath');
+      throw Exception('Failed to download file');
     }
+
+    print('Successfully downloaded $remoteFilePath to $localFilePath');
+    return localFilePath;
   }
 
-  @override
-  Future<String> downloadFileWithRetry(FTPCredentials credentials,
-      String remoteFilePath, String localDirectoryPath,
-      {int maxRetries = 3}) async {
-    Exception? lastException;
-
-    for (int attempt = 1; attempt <= maxRetries; attempt++) {
-      try {
-        return await downloadFile(
-            credentials, remoteFilePath, localDirectoryPath);
-      } catch (e) {
-        lastException = e is Exception ? e : Exception(e.toString());
-        print('Download attempt $attempt failed: $e');
-        if (attempt < maxRetries) {
-          // Wait before retry (exponential backoff)
-          await Future.delayed(Duration(seconds: attempt * 2));
-          continue;
-        }
-      }
+   /// Normalizes the path to ensure consistent format for FTP operations
+ String _normalizePath(String path) {
+    print('FTPDatasource._normalizePath: Input path: $path');
+    
+    if (path.isEmpty || path == '/') {
+      print('FTPDatasource._normalizePath: Returning root path: /');
+      return '/';
     }
 
-    throw lastException ??
-        Exception('Download failed after $maxRetries attempts');
+    // Ensure path starts with '/' but doesn't have multiple leading slashes
+    String normalized = path.replaceAll('//', '/');
+    if (!normalized.startsWith('/')) {
+      normalized = '/$normalized';
+    }
+    
+    // Remove trailing slash if it exists (except for root)
+    if (normalized.length > 1 && normalized.endsWith('/')) {
+      normalized = normalized.substring(0, normalized.length - 1);
+    }
+
+    // Don't add trailing slash as it might cause issues with the plugin
+    print('FTPDatasource._normalizePath: Normalized path: $normalized');
+    return normalized;
   }
 }
