@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io' show Directory, File, Platform;
+import 'dart:ui' show SystemNavigator;
 
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:file_saver/file_saver.dart';
@@ -1111,116 +1112,137 @@ class _UnifiedFileManagerScreenState
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.darkBackground,
-      appBar: AppBar(
-        title: Text(_currentPath, style: const TextStyle(color: Colors.white)),
-        backgroundColor: AppColors.darkSurface,
-        foregroundColor: Colors.white,
-        iconTheme: IconThemeData(color: AppColors.primaryLight),
-        elevation: 0,
-        actions: [
-          IconButton(
-            tooltip: 'Browse Root',
-            icon: Icon(Icons.home, color: AppColors.primaryLight),
-            onPressed: () {
-              setState(() {
-                _currentPath = '/';
-              });
-              _load();
-            },
-          ),
-          PopupMenuButton<String>(
-            color: AppColors.darkSurface,
-            icon: Icon(Icons.more_vert, color: AppColors.primaryLight),
-            onSelected: (value) async {
-              switch (value) {
-                case 'logout':
-                  await _showLogoutDialog(context, ref);
-                  break;
-                case 'settings':
-                  context.push(RouteNames.settings);
-                  break;
-              }
-            },
-            itemBuilder: (context) => [
-              PopupMenuItem(
-                value: 'settings',
-                child: Row(
-                  children: [
-                    Icon(Icons.settings, color: AppColors.primaryLight),
-                    const SizedBox(width: 8),
-                    const Text('Connection Settings',
-                        style: TextStyle(color: Colors.white)),
-                  ],
-                ),
+    return PopScope(
+      canPop: false, // Disable default back behavior
+      onPopInvoked: (didPop) async {
+        // Handle back button press
+        if (_currentPath != '/') {
+          // If not at root, navigate to parent directory
+          _goToParentDirectory();
+        } else {
+          // If at root, show exit confirmation dialog
+          await _showExitDialog(context);
+        }
+      },
+      child: Scaffold(
+        backgroundColor: AppColors.darkBackground,
+        appBar: AppBar(
+          title: Text(_currentPath, style: const TextStyle(color: Colors.white)),
+          backgroundColor: AppColors.darkSurface,
+          foregroundColor: Colors.white,
+          iconTheme: IconThemeData(color: AppColors.primaryLight),
+          elevation: 0,
+          leading: _currentPath == '/' 
+            ? null  // No back button when at root
+            : IconButton(
+                icon: Icon(Icons.arrow_back, color: AppColors.primaryLight),
+                onPressed: () {
+                  _goToParentDirectory();
+                },
               ),
-              PopupMenuItem(
-                value: 'logout',
-                child: Row(
-                  children: [
-                    Icon(Icons.logout, color: Colors.red[300]),
-                    const SizedBox(width: 8),
-                    Text('Logout', style: TextStyle(color: Colors.red[300])),
-                  ],
+          actions: [
+            IconButton(
+              tooltip: 'Browse Root',
+              icon: Icon(Icons.home, color: AppColors.primaryLight),
+              onPressed: () {
+                setState(() {
+                  _currentPath = '/';
+                });
+                _load();
+              },
+            ),
+            PopupMenuButton<String>(
+              color: AppColors.darkSurface,
+              icon: Icon(Icons.more_vert, color: AppColors.primaryLight),
+              onSelected: (value) async {
+                switch (value) {
+                  case 'logout':
+                    await _showLogoutDialog(context, ref);
+                    break;
+                  case 'settings':
+                    context.push(RouteNames.settings);
+                    break;
+                }
+              },
+              itemBuilder: (context) => [
+                PopupMenuItem(
+                  value: 'settings',
+                  child: Row(
+                    children: [
+                      Icon(Icons.settings, color: AppColors.primaryLight),
+                      const SizedBox(width: 8),
+                      const Text('Connection Settings',
+                          style: TextStyle(color: Colors.white)),
+                    ],
+                  ),
                 ),
-              ),
-            ],
-          ),
-        ],
-      ),
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: RadialGradient(
-            center: Alignment.topRight,
-            radius: 1.5,
-            colors: [
-              Color(0xFF1A0033),
-              AppColors.darkBackground,
-            ],
-            stops: [0.1, 0.9],
-          ),
+                PopupMenuItem(
+                  value: 'logout',
+                  child: Row(
+                    children: [
+                      Icon(Icons.logout, color: Colors.red[300]),
+                      const SizedBox(width: 8),
+                      Text('Logout', style: TextStyle(color: Colors.red[300])),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ],
         ),
-        child: _loading
-            ? Center(
-                child: CircularProgressIndicator(
-                year2023: false,
-                color: AppColors.primaryLight,
-                backgroundColor: AppColors.darkSurface,
-              ))
-            : RefreshIndicator(
-                backgroundColor: AppColors.darkSurface,
-                color: AppColors.primaryLight,
-                onRefresh: _load,
-                child: ListView(
-                  children: [
-                    if (_error != null) _buildErrorCard(),
+        body: Container(
+          decoration: const BoxDecoration(
+            gradient: RadialGradient(
+              center: Alignment.topRight,
+              radius: 1.5,
+              colors: [
+                Color(0xFF1A0033),
+                AppColors.darkBackground,
+              ],
+              stops: [0.1, 0.9],
+            ),
+          ),
+          child: _loading
+              ? Center(
+                  child: CircularProgressIndicator(
+                  year2023: false,
+                  color: AppColors.primaryLight,
+                  backgroundColor: AppColors.darkSurface,
+                ))
+              : RefreshIndicator(
+                  backgroundColor: AppColors.darkSurface,
+                  color: AppColors.primaryLight,
+                  onRefresh: _load,
+                  child: ListView(
+                    children: [
+                      if (_error != null) _buildErrorCard(),
 
-                    // Current path
-                    Padding(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 20, vertical: 12),
-                      child: Text(
-                        'Path: $_currentPath',
-                        style: const TextStyle(
-                            color: Colors.white70, fontSize: 12),
+                      // Current path
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 20, vertical: 12),
+                        child: Text(
+                          'Path: $_currentPath',
+                          style: const TextStyle(
+                              color: Colors.white70, fontSize: 12),
+                        ),
                       ),
-                    ),
 
-                    if (_folders.isNotEmpty) _buildSectionHeader('Folders'),
-                    ..._folders.map(_buildFolderTile),
-                    if (_files.isNotEmpty) _buildSectionHeader('Files'),
-                    ..._files.map(_buildFileTile),
-                    if (_folders.isEmpty && _files.isEmpty) _buildEmptyState(),
-                  ],
+                      if (_folders.isNotEmpty) _buildSectionHeader('Folders'),
+                      ..._folders.map(_buildFolderTile),
+                      if (_files.isNotEmpty) _buildSectionHeader('Files'),
+                      ..._files.map(_buildFileTile),
+                      if (_folders.isEmpty && _files.isEmpty) _buildEmptyState(),
+                    ],
+                  ),
                 ),
-              ),
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => _showUploadDialog(context),
-        backgroundColor: AppColors.primary,
-        foregroundColor: Colors.white,
-        child: const Icon(Icons.upload, color: Colors.white),
+        ),
+        floatingActionButton: FloatingActionButton(
+          onPressed: () => _showUploadDialog(context),
+          backgroundColor: AppColors.primary,
+          foregroundColor: Colors.white,
+          child: const Icon(Icons.upload, color: Colors.white),
+        ),
       ),
     );
   }
@@ -1379,5 +1401,69 @@ class _UnifiedFileManagerScreenState
         context.go(RouteNames.login);
       }
     }
+  }
+
+  void _goToParentDirectory() {
+    if (_currentPath == '/') {
+      // Already at root, do nothing
+      return;
+    }
+
+    // Split the current path by '/' and remove the last segment to get the parent path
+    List<String> pathSegments = _currentPath.split('/');
+    
+    // Remove empty segments and keep only non-empty ones
+    pathSegments = pathSegments.where((segment) => segment.isNotEmpty).toList();
+    
+    // Remove the last segment to get the parent directory
+    if (pathSegments.isNotEmpty) {
+      pathSegments.removeLast();
+    }
+    
+    // Build the parent path
+    String parentPath = pathSegments.isEmpty ? '/' : '/${pathSegments.join('/')}';
+    
+    setState(() {
+      _currentPath = parentPath;
+      print('UnifiedFileManagerScreen: Navigating to parent path: $_currentPath');
+    });
+    
+    _load();
+  }
+
+  Future<void> _showExitDialog(BuildContext context) async {
+    return showDialog<void>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          backgroundColor: AppColors.darkSurface.withOpacity(0.9),
+          surfaceTintColor: Colors.transparent,
+          title: const Text('Exit App', style: TextStyle(color: Colors.white)),
+          content: const Text(
+            'Are you sure you want to exit the application?',
+            style: TextStyle(color: Colors.white70),
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop(); // Close the dialog
+              },
+              child: const Text('Cancel', style: TextStyle(color: Colors.white70)),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                // Close the app
+                SystemNavigator.pop(); // This will close the app
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Exit'),
+            ),
+          ],
+        );
+      },
+    );
   }
 }
