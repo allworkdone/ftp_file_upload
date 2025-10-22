@@ -18,6 +18,7 @@ class FileManagerScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(fileManagerViewModelProvider);
     final auth = ref.watch(authViewModelProvider);
+    final viewModel = ref.read(fileManagerViewModelProvider.notifier);
 
     return Scaffold(
       backgroundColor: AppColors.darkBackground,
@@ -90,194 +91,303 @@ class FileManagerScreen extends ConsumerWidget {
             stops: [0.1, 0.9],
           ),
         ),
-        child: state.loading
-            ? Center(
-                child: CircularProgressIndicator(
-                  year2023: false,
-                  color: AppColors.primaryLight,
-                  backgroundColor: AppColors.darkSurface,
-                ),
-              )
-            : RefreshIndicator(
-                backgroundColor: AppColors.darkSurface,
-                color: AppColors.primaryLight,
-                onRefresh: () => ref
-                    .read(fileManagerViewModelProvider.notifier)
-                    .refresh(state.currentPath),
-                child: ListView(
-                  children: [
-                    if (state.error != null)
-                      Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Container(
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: Colors.red.withOpacity(0.2),
-                            borderRadius: BorderRadius.circular(16),
-                            border:
-                                Border.all(color: Colors.red.withOpacity(0.4)),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.red.withOpacity(0.1),
-                                blurRadius: 10,
-                                spreadRadius: 1,
-                              ),
-                            ],
-                          ),
-                          child: Row(
-                            children: [
-                              Icon(Icons.error, color: Colors.red[300]),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Text(
-                                  state.error!,
-                                  style: TextStyle(color: Colors.red[300]),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
+        child: Column(
+          children: [
+            // Search and sort controls
+            Container(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  // Search field
+                  Expanded(
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: AppColors.darkSurface.withOpacity(0.6),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: AppColors.primaryLight.withOpacity(0.3)),
                       ),
-
-                    // Connection info
-                    if (auth.credentials != null)
-                      Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Container(
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: Colors.green.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(
-                                color: Colors.green.withOpacity(0.3)),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.green.withOpacity(0.2),
-                                blurRadius: 10,
-                                spreadRadius: 1,
-                              ),
-                            ],
-                          ),
-                          child: Row(
-                            children: [
-                              Icon(Icons.cloud_done, color: Colors.green[300]),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Text(
-                                  'Connected to ${auth.credentials!.hostname}:${auth.credentials!.port}',
-                                  style: TextStyle(color: Colors.green[300]),
-                                ),
-                              ),
-                            ],
-                          ),
+                      child: TextField(
+                        decoration: InputDecoration(
+                          hintText: 'Search folders...',
+                          hintStyle: TextStyle(color: Colors.white54),
+                          prefixIcon: Icon(Icons.search, color: AppColors.primaryLight),
+                          suffixIcon: state.searchQuery != null && state.searchQuery!.isNotEmpty
+                              ? IconButton(
+                                  icon: Icon(Icons.clear, color: Colors.grey[400]),
+                                  onPressed: () => viewModel.setSearchQuery(''),
+                                )
+                              : null,
+                          border: InputBorder.none,
+                          contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                         ),
-                      ),
-
-                    // Current path
-                    Padding(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 20, vertical: 12),
-                      child: Text(
-                        'Path: ${state.currentPath}',
-                        style: const TextStyle(
-                            color: Colors.white70, fontSize: 12),
+                        style: TextStyle(color: Colors.white),
+                        onChanged: (value) => viewModel.setSearchQuery(value),
+                        autofocus: false, // Disable auto-focus
                       ),
                     ),
-
-                    // Folders list
-                    ...state.folders.map((f) => Container(
-                          margin: const EdgeInsets.symmetric(
-                              horizontal: 16, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: AppColors.darkSurface.withOpacity(0.6),
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(
-                                color: AppColors.primaryLight.withOpacity(0.2)),
-                          ),
-                          child: ListTile(
-                            leading:
-                                Icon(Icons.folder, color: Colors.amber[300]),
-                            title: Text(f.name,
-                                style: const TextStyle(color: Colors.white)),
-                            subtitle: Text('Folder • ${f.totalFiles} files',
-                                style: const TextStyle(color: Colors.white70)),
-                            onTap: () => context
-                                .go(RouteNames.folderBrowserPath(f.fullPath)),
-                            trailing: PopupMenuButton<String>(
-                              icon: Icon(Icons.more_vert,
-                                  color: AppColors.primaryLight),
-                              onSelected: (value) async {
-                                switch (value) {
-                                  case 'delete':
-                                    await _showDeleteFolderDialog(
-                                        context, ref, f.name, f.fullPath);
-                                    break;
-                                  case 'open':
-                                    final generateLinkUsecase =
-                                        getIt<GenerateLinkUsecase>();
-                                    final url = await generateLinkUsecase
-                                        .folderUrl(f.fullPath);
-                                    final uri = Uri.parse(url);
-                                    if (await canLaunchUrl(uri)) {
-                                      await launchUrl(uri);
-                                    }
-                                    break;
-                                }
-                              },
-                              itemBuilder: (context) => [
-                                PopupMenuItem(
-                                  value: 'open',
-                                  child: Row(
-                                    children: [
-                                      Icon(Icons.open_in_browser,
-                                          color: AppColors.primaryLight),
-                                      const SizedBox(width: 8),
-                                      const Text('Open in browser',
-                                          style:
-                                              TextStyle(color: Colors.white)),
-                                    ],
-                                  ),
-                                ),
-                                PopupMenuItem(
-                                  value: 'delete',
-                                  child: Row(
-                                    children: [
-                                      Icon(Icons.delete,
-                                          color: Colors.red[300]),
-                                      const SizedBox(width: 8),
-                                      Text('Delete',
-                                          style: TextStyle(
-                                              color: Colors.red[300])),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        )),
-
-                    if (state.folders.isEmpty)
-                      Padding(
-                        padding: const EdgeInsets.all(40),
-                        child: Center(
-                          child: Column(
+                  ),
+                  SizedBox(width: 12),
+                  // Sort button
+                  Container(
+                    decoration: BoxDecoration(
+                      color: AppColors.darkSurface.withOpacity(0.6),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppColors.primaryLight.withOpacity(0.3)),
+                    ),
+                    child: PopupMenuButton<FolderSortOption>(
+                      color: AppColors.darkSurface,
+                      icon: Icon(Icons.sort, color: AppColors.primaryLight),
+                      onSelected: (option) => viewModel.setSortOption(option),
+                      itemBuilder: (context) => [
+                        PopupMenuItem(
+                          value: FolderSortOption.name,
+                          child: Row(
                             children: [
-                              Icon(Icons.folder_open,
-                                  size: 64, color: Colors.grey[400]),
-                              const SizedBox(height: 16),
-                              const Text('No folders found',
-                                  style: TextStyle(
-                                      color: Colors.white70, fontSize: 18)),
-                              const SizedBox(height: 8),
-                              const Text('Create a new folder or upload files',
-                                  style: TextStyle(color: Colors.white54)),
+                              Icon(Icons.text_fields, color: AppColors.primaryLight),
+                              const SizedBox(width: 8),
+                              Text('Sort by Name', style: TextStyle(color: Colors.white)),
                             ],
                           ),
                         ),
-                      ),
-                  ],
-                ),
+                        PopupMenuItem(
+                          value: FolderSortOption.nameReverse,
+                          child: Row(
+                            children: [
+                              Icon(Icons.text_fields, color: AppColors.primaryLight),
+                              const SizedBox(width: 8),
+                              Text('Sort by Name (Z-A)', style: TextStyle(color: Colors.white)),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
+            ),
+            // Main content
+            Expanded(
+              child: state.loading
+                  ? Center(
+                      child: CircularProgressIndicator(
+                        year2023: false,
+                        color: AppColors.primaryLight,
+                        backgroundColor: AppColors.darkSurface,
+                      ),
+                    )
+                  : RefreshIndicator(
+                      backgroundColor: AppColors.darkSurface,
+                      color: AppColors.primaryLight,
+                      onRefresh: () => ref
+                          .read(fileManagerViewModelProvider.notifier)
+                          .refresh(state.currentPath),
+                      child: ListView(
+                        children: [
+                          if (state.error != null)
+                            Padding(
+                              padding: const EdgeInsets.all(16),
+                              child: Container(
+                                padding: const EdgeInsets.all(16),
+                                decoration: BoxDecoration(
+                                  color: Colors.red.withOpacity(0.2),
+                                  borderRadius: BorderRadius.circular(16),
+                                  border:
+                                      Border.all(color: Colors.red.withOpacity(0.4)),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.red.withOpacity(0.1),
+                                      blurRadius: 10,
+                                      spreadRadius: 1,
+                                    ),
+                                  ],
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.error, color: Colors.red[300]),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Text(
+                                        state.error!,
+                                        style: TextStyle(color: Colors.red[300]),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+
+                          // Connection info
+                          if (auth.credentials != null)
+                            Padding(
+                              padding: const EdgeInsets.all(16),
+                              child: Container(
+                                padding: const EdgeInsets.all(16),
+                                decoration: BoxDecoration(
+                                  color: Colors.green.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(
+                                      color: Colors.green.withOpacity(0.3)),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.green.withOpacity(0.2),
+                                      blurRadius: 10,
+                                      spreadRadius: 1,
+                                    ),
+                                  ],
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.cloud_done, color: Colors.green[300]),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Text(
+                                        'Connected to ${auth.credentials!.hostname}:${auth.credentials!.port}',
+                                        style: TextStyle(color: Colors.green[300]),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+
+                          // Current path
+                          Padding(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 20, vertical: 12),
+                            child: Text(
+                              'Path: ${state.currentPath}',
+                              style: const TextStyle(
+                                  color: Colors.white70, fontSize: 12),
+                            ),
+                          ),
+
+                          // Results count
+                          if (state.searchQuery != null && state.searchQuery!.isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                              child: Text(
+                                '${state.folders.length} result(s) found for "${state.searchQuery}"',
+                                style: const TextStyle(color: Colors.white54, fontSize: 14),
+                              ),
+                            ),
+
+                          // Folders list
+                          ...state.folders.map((f) => Container(
+                                margin: const EdgeInsets.symmetric(
+                                    horizontal: 16, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: AppColors.darkSurface.withOpacity(0.6),
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(
+                                      color: AppColors.primaryLight.withOpacity(0.2)),
+                                ),
+                                child: ListTile(
+                                  leading:
+                                      Icon(Icons.folder, color: Colors.amber[300]),
+                                  title: Text(f.name,
+                                      style: const TextStyle(color: Colors.white)),
+                                  subtitle: Text('Folder • ${f.totalFiles} files',
+                                      style: const TextStyle(color: Colors.white70)),
+                                  onTap: () => context
+                                      .go(RouteNames.folderBrowserPath(f.fullPath)),
+                                  trailing: PopupMenuButton<String>(
+                                    icon: Icon(Icons.more_vert,
+                                        color: AppColors.primaryLight),
+                                    onSelected: (value) async {
+                                      switch (value) {
+                                        case 'delete':
+                                          await _showDeleteFolderDialog(
+                                              context, ref, f.name, f.fullPath);
+                                          break;
+                                        case 'open':
+                                          final generateLinkUsecase =
+                                              getIt<GenerateLinkUsecase>();
+                                          final url = await generateLinkUsecase
+                                              .folderUrl(f.fullPath);
+                                          final uri = Uri.parse(url);
+                                          if (await canLaunchUrl(uri)) {
+                                            await launchUrl(uri);
+                                          }
+                                          break;
+                                      }
+                                    },
+                                    itemBuilder: (context) => [
+                                      PopupMenuItem(
+                                        value: 'open',
+                                        child: Row(
+                                          children: [
+                                            Icon(Icons.open_in_browser,
+                                                color: AppColors.primaryLight),
+                                            const SizedBox(width: 8),
+                                            const Text('Open in browser',
+                                                style:
+                                                    TextStyle(color: Colors.white)),
+                                          ],
+                                        ),
+                                      ),
+                                      PopupMenuItem(
+                                        value: 'delete',
+                                        child: Row(
+                                          children: [
+                                            Icon(Icons.delete,
+                                                color: Colors.red[300]),
+                                            const SizedBox(width: 8),
+                                            Text('Delete',
+                                                style: TextStyle(
+                                                    color: Colors.red[300])),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              )),
+
+                          if (state.folders.isEmpty && (state.searchQuery == null || state.searchQuery!.isEmpty))
+                            Padding(
+                              padding: const EdgeInsets.all(40),
+                              child: Center(
+                                child: Column(
+                                  children: [
+                                    Icon(Icons.folder_open,
+                                        size: 64, color: Colors.grey[400]),
+                                    const SizedBox(height: 16),
+                                    const Text('No folders found',
+                                        style: TextStyle(
+                                            color: Colors.white70, fontSize: 18)),
+                                    const SizedBox(height: 8),
+                                    const Text('Create a new folder or upload files',
+                                        style: TextStyle(color: Colors.white54)),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          
+                          if (state.folders.isEmpty && state.searchQuery != null && state.searchQuery!.isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.all(40),
+                              child: Center(
+                                child: Column(
+                                  children: [
+                                    Icon(Icons.search_off,
+                                        size: 64, color: Colors.grey[400]),
+                                    const SizedBox(height: 16),
+                                    const Text('No results found',
+                                        style: TextStyle(
+                                            color: Colors.white70, fontSize: 18)),
+                                    const SizedBox(height: 8),
+                                    const Text('Try a different search term',
+                                        style: TextStyle(color: Colors.white54)),
+                                  ],
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+            ),
+          ],
+        ),
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () => _showCreateFolderDialog(context, ref),
@@ -452,6 +562,7 @@ class FileManagerScreen extends ConsumerWidget {
           ref
               .read(fileManagerViewModelProvider.notifier)
               .refresh(ref.read(fileManagerViewModelProvider).currentPath);
+
         }
       } catch (e) {
         if (context.mounted) {

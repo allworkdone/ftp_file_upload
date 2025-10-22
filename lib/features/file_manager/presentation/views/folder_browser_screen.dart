@@ -27,6 +27,7 @@ import '../../../file_manager/domain/usecases/delete_file_usecase.dart';
 import '../../../file_manager/domain/usecases/delete_folder_usecase.dart';
 import '../../../file_manager/domain/usecases/get_files_usecase.dart';
 import '../../../file_manager/domain/usecases/get_folders_usecase.dart';
+import '../viewmodels/folder_browser_viewmodel.dart';
 
 class FolderBrowserScreen extends ConsumerStatefulWidget {
   final String folderPath;
@@ -38,10 +39,6 @@ class FolderBrowserScreen extends ConsumerStatefulWidget {
 }
 
 class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
-  bool _loading = true;
-  List<FTPFolder> _folders = const [];
-  List<FTPFile> _files = const [];
-  String? _error;
   double _downloadProgress = 0.0;
   bool _isDownloading = false;
   String _downloadingFileName = '';
@@ -49,32 +46,9 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
   @override
   void initState() {
     super.initState();
-    _load();
-  }
-
-  Future<void> _load() async {
-    setState(() => _loading = true);
-    try {
-      final results = await Future.wait([
-        getIt<GetFoldersUsecase>()(widget.folderPath),
-        getIt<GetFilesUsecase>()(widget.folderPath),
-      ]);
-      if (mounted) {
-        setState(() {
-          _folders = results[0] as List<FTPFolder>;
-          _files = results[1] as List<FTPFile>;
-          _loading = false;
-          _error = null;
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _loading = false;
-          _error = e.toString();
-        });
-      }
-    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(folderBrowserViewModelProvider.notifier).load(widget.folderPath);
+    });
   }
 
   Future<void> _deleteItem(String path, String name, bool isFolder) async {
@@ -88,7 +62,8 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
         await getIt<DeleteFileUsecase>()(path);
       }
       _showSnackBar('$name deleted successfully', isSuccess: true);
-      _load();
+      // Reload the current folder
+      ref.read(folderBrowserViewModelProvider.notifier).load(widget.folderPath);
     } catch (e) {
       _showSnackBar('Failed to delete: $e', isSuccess: false);
     }
@@ -1113,6 +1088,9 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final state = ref.watch(folderBrowserViewModelProvider);
+    final viewModel = ref.read(folderBrowserViewModelProvider.notifier);
+
     return Scaffold(
       backgroundColor: AppColors.darkBackground,
       appBar: AppBar(
@@ -1135,40 +1113,130 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
             stops: [0.1, 0.9],
           ),
         ),
-        child: _loading
-            ? Center(
-                child: CircularProgressIndicator(
-                year2023: false,
-                color: AppColors.primaryLight,
-                backgroundColor: AppColors.darkSurface,
-              ))
-            : RefreshIndicator(
-                backgroundColor: AppColors.darkSurface,
-                color: AppColors.primaryLight,
-                onRefresh: _load,
-                child: ListView(
-                  children: [
-                    if (_error != null) _buildErrorCard(),
-
-                    // Current path
-                    Padding(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 20, vertical: 12),
-                      child: Text(
-                        'Path: ${widget.folderPath}',
-                        style: const TextStyle(
-                            color: Colors.white70, fontSize: 12),
+        child: Column(
+          children: [
+            // Search and sort controls
+            Container(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  // Search field
+                  Expanded(
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: AppColors.darkSurface.withOpacity(0.6),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: AppColors.primaryLight.withOpacity(0.3)),
+                      ),
+                      child: TextField(
+                        decoration: InputDecoration(
+                          hintText: 'Search files and folders...',
+                          hintStyle: TextStyle(color: Colors.white54),
+                          prefixIcon: Icon(Icons.search, color: AppColors.primaryLight),
+                          suffixIcon: state.searchQuery != null && state.searchQuery!.isNotEmpty
+                              ? IconButton(
+                                  icon: Icon(Icons.clear, color: Colors.grey[400]),
+                                  onPressed: () => viewModel.setSearchQuery(''),
+                                )
+                              : null,
+                          border: InputBorder.none,
+                          contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        ),
+                        style: TextStyle(color: Colors.white),
+                        onChanged: (value) => viewModel.setSearchQuery(value),
+                        autofocus: false, // Disable auto-focus
                       ),
                     ),
-
-                    if (_folders.isNotEmpty) _buildSectionHeader('Folders'),
-                    ..._folders.map(_buildFolderTile),
-                    if (_files.isNotEmpty) _buildSectionHeader('Files'),
-                    ..._files.map(_buildFileTile),
-                    if (_folders.isEmpty && _files.isEmpty) _buildEmptyState(),
-                  ],
-                ),
+                  ),
+                  SizedBox(width: 12),
+                  // Sort button
+                  Container(
+                    decoration: BoxDecoration(
+                      color: AppColors.darkSurface.withOpacity(0.6),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppColors.primaryLight.withOpacity(0.3)),
+                    ),
+                    child: PopupMenuButton<FolderSortOption>(
+                      color: AppColors.darkSurface,
+                      icon: Icon(Icons.sort, color: AppColors.primaryLight),
+                      onSelected: (option) => viewModel.setSortOption(option),
+                      itemBuilder: (context) => [
+                        PopupMenuItem(
+                          value: FolderSortOption.name,
+                          child: Row(
+                            children: [
+                              Icon(Icons.text_fields, color: AppColors.primaryLight),
+                              const SizedBox(width: 8),
+                              Text('Sort by Name', style: TextStyle(color: Colors.white)),
+                            ],
+                          ),
+                        ),
+                        PopupMenuItem(
+                          value: FolderSortOption.nameReverse,
+                          child: Row(
+                            children: [
+                              Icon(Icons.text_fields, color: AppColors.primaryLight),
+                              const SizedBox(width: 8),
+                              Text('Sort by Name (Z-A)', style: TextStyle(color: Colors.white)),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
+            ),
+            // Main content
+            Expanded(
+              child: state.loading
+                  ? Center(
+                      child: CircularProgressIndicator(
+                      year2023: false,
+                      color: AppColors.primaryLight,
+                      backgroundColor: AppColors.darkSurface,
+                    ))
+                  : RefreshIndicator(
+                      backgroundColor: AppColors.darkSurface,
+                      color: AppColors.primaryLight,
+                      onRefresh: () => ref.read(folderBrowserViewModelProvider.notifier).load(widget.folderPath),
+                      child: ListView(
+                        children: [
+                          if (state.error != null) _buildErrorCard(state.error!),
+
+                          // Current path
+                          Padding(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 20, vertical: 12),
+                            child: Text(
+                              'Path: ${widget.folderPath}',
+                              style: const TextStyle(
+                                  color: Colors.white70, fontSize: 12),
+                            ),
+                          ),
+
+                          // Results count
+                          if (state.searchQuery != null && state.searchQuery!.isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                              child: Text(
+                                '${state.folders.length + state.files.length} result(s) found for "${state.searchQuery}"',
+                                style: const TextStyle(color: Colors.white54, fontSize: 14),
+                              ),
+                            ),
+
+                          if (state.folders.isNotEmpty) _buildSectionHeader('Folders'),
+                          ...state.folders.map(_buildFolderTile),
+                          if (state.files.isNotEmpty) _buildSectionHeader('Files'),
+                          ...state.files.map(_buildFileTile),
+                          if (state.folders.isEmpty && state.files.isEmpty && (state.searchQuery == null || state.searchQuery!.isEmpty)) _buildEmptyState(),
+                          if (state.folders.isEmpty && state.files.isEmpty && state.searchQuery != null && state.searchQuery!.isNotEmpty) _buildNoSearchResults(),
+                        ],
+                      ),
+                    ),
+            ),
+          ],
+        ),
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () =>
@@ -1180,7 +1248,7 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
     );
   }
 
-  Widget _buildErrorCard() {
+  Widget _buildErrorCard(String error) {
     return Padding(
       padding: const EdgeInsets.all(16),
       child: Container(
@@ -1203,7 +1271,7 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
             const SizedBox(width: 12),
             Expanded(
               child: Text(
-                _error!,
+                error,
                 style: TextStyle(color: Colors.red[300]),
               ),
             ),
@@ -1236,6 +1304,25 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
                 style: TextStyle(color: Colors.white70, fontSize: 18)),
             const SizedBox(height: 8),
             const Text('Upload files or create subfolders',
+                style: TextStyle(color: Colors.white54)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNoSearchResults() {
+    return Padding(
+      padding: const EdgeInsets.all(40),
+      child: Center(
+        child: Column(
+          children: [
+            Icon(Icons.search_off, size: 64, color: Colors.grey[400]),
+            const SizedBox(height: 16),
+            const Text('No results found',
+                style: TextStyle(color: Colors.white70, fontSize: 18)),
+            const SizedBox(height: 8),
+            const Text('Try a different search term',
                 style: TextStyle(color: Colors.white54)),
           ],
         ),
