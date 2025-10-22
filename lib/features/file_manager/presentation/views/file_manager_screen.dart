@@ -102,25 +102,30 @@ class FileManagerScreen extends ConsumerWidget {
                   Expanded(
                     child: Container(
                       decoration: BoxDecoration(
-                        color: AppColors.darkSurface.withOpacity(0.6),
+                        color: AppColors.primaryDark.withOpacity(0.6),
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: AppColors.primaryLight.withOpacity(0.3)),
+                        border: Border.all(
+                            color: AppColors.primaryLight.withOpacity(0.3)),
                       ),
                       child: TextField(
                         decoration: InputDecoration(
                           hintText: 'Search folders...',
                           hintStyle: TextStyle(color: Colors.white54),
-                          prefixIcon: Icon(Icons.search, color: AppColors.primaryLight),
-                          suffixIcon: state.searchQuery != null && state.searchQuery!.isNotEmpty
+                          prefixIcon:
+                              Icon(Icons.search, color: AppColors.primaryLight),
+                          suffixIcon: state.searchQuery != null &&
+                                  state.searchQuery!.isNotEmpty
                               ? IconButton(
-                                  icon: Icon(Icons.clear, color: Colors.grey[400]),
+                                  icon: Icon(Icons.clear,
+                                      color: Colors.grey[400]),
                                   onPressed: () => viewModel.setSearchQuery(''),
                                 )
                               : null,
                           border: InputBorder.none,
-                          contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                          contentPadding: EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 12),
                         ),
-                        style: TextStyle(color: Colors.white),
+                        style: TextStyle(color: Colors.deepPurple),
                         onChanged: (value) => viewModel.setSearchQuery(value),
                         autofocus: false, // Disable auto-focus
                       ),
@@ -132,7 +137,8 @@ class FileManagerScreen extends ConsumerWidget {
                     decoration: BoxDecoration(
                       color: AppColors.darkSurface.withOpacity(0.6),
                       borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: AppColors.primaryLight.withOpacity(0.3)),
+                      border: Border.all(
+                          color: AppColors.primaryLight.withOpacity(0.3)),
                     ),
                     child: PopupMenuButton<FolderSortOption>(
                       color: AppColors.darkSurface,
@@ -143,9 +149,11 @@ class FileManagerScreen extends ConsumerWidget {
                           value: FolderSortOption.name,
                           child: Row(
                             children: [
-                              Icon(Icons.text_fields, color: AppColors.primaryLight),
+                              Icon(Icons.text_fields,
+                                  color: AppColors.primaryLight),
                               const SizedBox(width: 8),
-                              Text('Sort by Name', style: TextStyle(color: Colors.white)),
+                              Text('Sort by Name',
+                                  style: TextStyle(color: Colors.white)),
                             ],
                           ),
                         ),
@@ -153,9 +161,11 @@ class FileManagerScreen extends ConsumerWidget {
                           value: FolderSortOption.nameReverse,
                           child: Row(
                             children: [
-                              Icon(Icons.text_fields, color: AppColors.primaryLight),
+                              Icon(Icons.text_fields,
+                                  color: AppColors.primaryLight),
                               const SizedBox(width: 8),
-                              Text('Sort by Name (Z-A)', style: TextStyle(color: Colors.white)),
+                              Text('Sort by Name (Z-A)',
+                                  style: TextStyle(color: Colors.white)),
                             ],
                           ),
                         ),
@@ -191,8 +201,8 @@ class FileManagerScreen extends ConsumerWidget {
                                 decoration: BoxDecoration(
                                   color: Colors.red.withOpacity(0.2),
                                   borderRadius: BorderRadius.circular(16),
-                                  border:
-                                      Border.all(color: Colors.red.withOpacity(0.4)),
+                                  border: Border.all(
+                                      color: Colors.red.withOpacity(0.4)),
                                   boxShadow: [
                                     BoxShadow(
                                       color: Colors.red.withOpacity(0.1),
@@ -208,7 +218,8 @@ class FileManagerScreen extends ConsumerWidget {
                                     Expanded(
                                       child: Text(
                                         state.error!,
-                                        style: TextStyle(color: Colors.red[300]),
+                                        style:
+                                            TextStyle(color: Colors.red[300]),
                                       ),
                                     ),
                                   ],
@@ -237,12 +248,14 @@ class FileManagerScreen extends ConsumerWidget {
                                 ),
                                 child: Row(
                                   children: [
-                                    Icon(Icons.cloud_done, color: Colors.green[300]),
+                                    Icon(Icons.cloud_done,
+                                        color: Colors.green[300]),
                                     const SizedBox(width: 12),
                                     Expanded(
                                       child: Text(
                                         'Connected to ${auth.credentials!.hostname}:${auth.credentials!.port}',
-                                        style: TextStyle(color: Colors.green[300]),
+                                        style:
+                                            TextStyle(color: Colors.green[300]),
                                       ),
                                     ),
                                   ],
@@ -262,12 +275,15 @@ class FileManagerScreen extends ConsumerWidget {
                           ),
 
                           // Results count
-                          if (state.searchQuery != null && state.searchQuery!.isNotEmpty)
+                          if (state.searchQuery != null &&
+                              state.searchQuery!.isNotEmpty)
                             Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 20, vertical: 8),
                               child: Text(
                                 '${state.folders.length} result(s) found for "${state.searchQuery}"',
-                                style: const TextStyle(color: Colors.white54, fontSize: 14),
+                                style: const TextStyle(
+                                    color: Colors.white54, fontSize: 14),
                               ),
                             ),
 
@@ -279,16 +295,27 @@ class FileManagerScreen extends ConsumerWidget {
                                   color: AppColors.darkSurface.withOpacity(0.6),
                                   borderRadius: BorderRadius.circular(16),
                                   border: Border.all(
-                                      color: AppColors.primaryLight.withOpacity(0.2)),
+                                      color: AppColors.primaryLight
+                                          .withOpacity(0.2)),
                                 ),
                                 child: ListTile(
-                                  leading:
-                                      Icon(Icons.folder, color: Colors.amber[300]),
+                                  leading: Icon(Icons.folder,
+                                      color: Colors.amber[300]),
                                   title: Text(f.name,
-                                      style: const TextStyle(color: Colors.white)),
-                                  subtitle: Text('Folder', style: const TextStyle(color: Colors.white70)),
-                                  onTap: () => context
-                                      .go(RouteNames.folderBrowserPath(f.fullPath)),
+                                      style:
+                                          const TextStyle(color: Colors.white)),
+                                  subtitle: Text('Folder',
+                                      style: const TextStyle(
+                                          color: Colors.white70)),
+                                  onTap: () {
+                                    // Clear search query when navigating to a new folder
+                                    ref
+                                        .read(fileManagerViewModelProvider
+                                            .notifier)
+                                        .setSearchQuery('');
+                                    context.go(RouteNames.folderBrowserPath(
+                                        f.fullPath));
+                                  },
                                   trailing: PopupMenuButton<String>(
                                     icon: Icon(Icons.more_vert,
                                         color: AppColors.primaryLight),
@@ -319,8 +346,8 @@ class FileManagerScreen extends ConsumerWidget {
                                                 color: AppColors.primaryLight),
                                             const SizedBox(width: 8),
                                             const Text('Open in browser',
-                                                style:
-                                                    TextStyle(color: Colors.white)),
+                                                style: TextStyle(
+                                                    color: Colors.white)),
                                           ],
                                         ),
                                       ),
@@ -342,7 +369,9 @@ class FileManagerScreen extends ConsumerWidget {
                                 ),
                               )),
 
-                          if (state.folders.isEmpty && (state.searchQuery == null || state.searchQuery!.isEmpty))
+                          if (state.folders.isEmpty &&
+                              (state.searchQuery == null ||
+                                  state.searchQuery!.isEmpty))
                             Padding(
                               padding: const EdgeInsets.all(40),
                               child: Center(
@@ -353,16 +382,21 @@ class FileManagerScreen extends ConsumerWidget {
                                     const SizedBox(height: 16),
                                     const Text('No folders found',
                                         style: TextStyle(
-                                            color: Colors.white70, fontSize: 18)),
+                                            color: Colors.white70,
+                                            fontSize: 18)),
                                     const SizedBox(height: 8),
-                                    const Text('Create a new folder or upload files',
-                                        style: TextStyle(color: Colors.white54)),
+                                    const Text(
+                                        'Create a new folder or upload files',
+                                        style:
+                                            TextStyle(color: Colors.white54)),
                                   ],
                                 ),
                               ),
                             ),
-                          
-                          if (state.folders.isEmpty && state.searchQuery != null && state.searchQuery!.isNotEmpty)
+
+                          if (state.folders.isEmpty &&
+                              state.searchQuery != null &&
+                              state.searchQuery!.isNotEmpty)
                             Padding(
                               padding: const EdgeInsets.all(40),
                               child: Center(
@@ -373,10 +407,12 @@ class FileManagerScreen extends ConsumerWidget {
                                     const SizedBox(height: 16),
                                     const Text('No results found',
                                         style: TextStyle(
-                                            color: Colors.white70, fontSize: 18)),
+                                            color: Colors.white70,
+                                            fontSize: 18)),
                                     const SizedBox(height: 8),
                                     const Text('Try a different search term',
-                                        style: TextStyle(color: Colors.white54)),
+                                        style:
+                                            TextStyle(color: Colors.white54)),
                                   ],
                                 ),
                               ),
@@ -561,7 +597,6 @@ class FileManagerScreen extends ConsumerWidget {
           ref
               .read(fileManagerViewModelProvider.notifier)
               .refresh(ref.read(fileManagerViewModelProvider).currentPath);
-
         }
       } catch (e) {
         if (context.mounted) {

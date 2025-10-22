@@ -3,6 +3,7 @@ import 'dart:io' show Directory, File, Platform;
 
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:file_saver/file_saver.dart';
+import 'package:file_upload/core/services/notification_service.dart';
 import 'package:file_upload/core/utils/app_logger.dart';
 import 'package:file_upload/core/utils/permission_utils.dart';
 import 'package:file_upload/features/authentication/domain/entities/ftp_credentials.dart';
@@ -27,6 +28,8 @@ import '../../../file_manager/domain/usecases/delete_file_usecase.dart';
 import '../../../file_manager/domain/usecases/delete_folder_usecase.dart';
 import '../../../file_manager/domain/usecases/get_files_usecase.dart';
 import '../../../file_manager/domain/usecases/get_folders_usecase.dart';
+import '../../../file_manager/domain/usecases/rename_file_usecase.dart';
+import '../../../file_manager/domain/usecases/rename_folder_usecase.dart';
 import '../viewmodels/folder_browser_viewmodel.dart';
 
 class FolderBrowserScreen extends ConsumerStatefulWidget {
@@ -182,6 +185,17 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
         _downloadingFileName = file.name;
       });
 
+      // Initialize notification service
+      final notificationService = NotificationService();
+
+      // Show initial notification
+      await notificationService.showDownloadProgressNotification(
+        id: file.hashCode, // Unique ID for this download
+        title: 'Downloading ${file.name}',
+        description: 'Starting download...',
+        progress: 0,
+      );
+
       // For Android, check and request appropriate permissions
       if (Platform.isAndroid) {
         final permissionUtils = PermissionUtils();
@@ -196,6 +210,7 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
             final userWantsToGrant = await _showPermissionRationaleDialog();
             if (!userWantsToGrant) {
               setState(() => _isDownloading = false);
+              await notificationService.cancelNotification(file.hashCode);
               return;
             }
           }
@@ -204,6 +219,7 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
 
           if (!granted) {
             setState(() => _isDownloading = false);
+            await notificationService.cancelNotification(file.hashCode);
             _showSnackBar('Storage permission is required to download files',
                 isSuccess: false);
 
@@ -216,21 +232,14 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
         }
       }
 
-      // Update progress to 10%
-      setState(() => _downloadProgress = 0.1);
-      _showSnackBar('Starting download of "${file.name}"...',
-          showProgress: false);
-
       // Get credentials from auth
       final auth = ref.read(authViewModelProvider);
       if (auth.credentials == null) {
         setState(() => _isDownloading = false);
+        await notificationService.cancelNotification(file.hashCode);
         _showSnackBar('No FTP credentials available', isSuccess: false);
         return;
       }
-
-      // Update progress to 20%
-      setState(() => _downloadProgress = 0.2);
 
       // Use FTP datasource with progress callback
       final ftpDatasource = getIt<FTPDatasource>();
@@ -239,33 +248,33 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
       final tempDir = Directory.systemTemp;
       final tempPath = tempDir.path;
 
-      // Update progress to 30%
-      setState(() => _downloadProgress = 0.3);
-
-      // Download file via FTP to temp location with progress tracking
-      final localFilePath = await _downloadFileWithProgress(
-        ftpDatasource,
+      // Download file via FTP to temp location with real progress tracking
+      final localFilePath = await ftpDatasource.downloadFile(
         auth.credentials!,
         file.fullPath,
         tempPath,
-        file.size ?? 0,
-      );
+        onProgress: (progress) {
+          final intProgress = (progress * 100).toInt();
+          setState(() {
+            _downloadProgress = progress;
+          });
 
-      // Progress is now at 80% from download
-      setState(() => _downloadProgress = 0.85);
+          // Update notification with progress
+          notificationService.updateDownloadProgressNotification(
+            id: file.hashCode,
+            title: 'Downloading ${file.name}',
+            description: '${intProgress}% complete',
+            progress: intProgress,
+          );
+        },
+      );
 
       // Read the downloaded file
       final downloadedFile = File(localFilePath);
       final bytes = await downloadedFile.readAsBytes();
 
-      // Update progress to 90%
-      setState(() => _downloadProgress = 0.9);
-
       // Save to Downloads folder using the improved method
       final savedFilePath = await _saveToDownloads(file.name, bytes);
-
-      // Update progress to 95%
-      setState(() => _downloadProgress = 0.95);
 
       if (savedFilePath != null) {
         // Clean up temp file
@@ -278,16 +287,40 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
         // Complete progress
         setState(() => _downloadProgress = 1.0);
 
+        // Update notification to completed
+        await notificationService.showDownloadProgressNotification(
+          id: file.hashCode,
+          title: 'Download completed',
+          description: '${file.name} saved successfully',
+          progress: 100,
+        );
+
         // Small delay to show 100%
         await Future.delayed(Duration(milliseconds: 500));
 
         setState(() => _isDownloading = false);
+
+        // Cancel the notification after a short delay
+        Future.delayed(Duration(seconds: 5), () {
+          notificationService.cancelNotification(file.hashCode);
+        });
 
         _showSnackBar('Download completed successfully!', isSuccess: true);
 
         // Show download complete dialog
         _showDownloadCompleteDialog(savedFilePath);
       } else {
+        // Show error notification
+        await notificationService.showDownloadProgressNotification(
+          id: file.hashCode,
+          title: 'Download failed',
+          description: 'Failed to save ${file.name}',
+          progress: 100,
+        );
+        Future.delayed(Duration(seconds: 3), () {
+          notificationService.cancelNotification(file.hashCode);
+        });
+
         throw Exception('Failed to save file to Downloads folder');
       }
     } catch (e) {
@@ -295,42 +328,6 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
       AppLogger.error('Download failed', e);
       _showSnackBar('Download failed: ${e.toString()}', isSuccess: false);
     }
-  }
-
-// Modified FTP download with progress tracking
-  Future<String> _downloadFileWithProgress(
-    FTPDatasource ftpDatasource,
-    FTPCredentials credentials,
-    String remotePath,
-    String localDir,
-    int fileSize,
-  ) async {
-    // This is a wrapper that simulates progress for FTP download
-    // You'll need to modify your FTPDatasource to support progress callbacks
-
-    final completer = Completer<String>();
-
-    // Start the actual download
-    ftpDatasource.downloadFile(credentials, remotePath, localDir).then((path) {
-      setState(() => _downloadProgress = 0.8);
-      completer.complete(path);
-    }).catchError((error) {
-      completer.completeError(error);
-    });
-
-    // Simulate progress updates during download (you can replace this with actual FTP progress)
-    Timer.periodic(Duration(milliseconds: 200), (timer) {
-      if (completer.isCompleted) {
-        timer.cancel();
-        return;
-      }
-
-      if (_downloadProgress < 0.75) {
-        setState(() => _downloadProgress += 0.05);
-      }
-    });
-
-    return completer.future;
   }
 
 // Widget to show download progress
@@ -1002,6 +999,76 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
     );
   }
 
+  Future<void> _renameItem(String path, String name, bool isFolder) async {
+    final newNameController = TextEditingController(text: name);
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.darkSurface.withOpacity(0.9),
+        surfaceTintColor: Colors.transparent,
+        title: Text('Rename ${isFolder ? 'Folder' : 'File'}', style: TextStyle(color: Colors.white)),
+        content: TextField(
+          controller: newNameController,
+          style: const TextStyle(color: Colors.white),
+          decoration: InputDecoration(
+            labelText: 'New name',
+            labelStyle: const TextStyle(color: Colors.white70),
+            hintText: 'Enter new name',
+            hintStyle: const TextStyle(color: Colors.white54),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(color: AppColors.primaryLight.withOpacity(0.3)),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(color: AppColors.primaryLight.withOpacity(0.3)),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(color: AppColors.primaryLight, width: 2),
+            ),
+            filled: true,
+            fillColor: AppColors.darkSurface.withOpacity(0.8),
+          ),
+          autofocus: true,
+          onSubmitted: (value) => Navigator.pop(ctx, value),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel', style: TextStyle(color: Colors.white70)),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, newNameController.text.trim()),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Rename'),
+          ),
+        ],
+      ),
+    );
+
+    if (result != null && result.isNotEmpty && result != name) {
+      try {
+        // Get the parent path and construct new path
+        final parentPath = path.substring(0, path.lastIndexOf('/'));
+        final newPath = isFolder ? '$parentPath/$result' : '$parentPath/$result';
+        if (isFolder) {
+          await getIt<RenameFolderUsecase>()(path, newPath);
+        } else {
+          await getIt<RenameFileUsecase>()(path, newPath);
+        }
+        _showSnackBar('${isFolder ? 'Folder' : 'File'} renamed successfully', isSuccess: true);
+        // Reload the current folder
+        ref.read(folderBrowserViewModelProvider.notifier).load(widget.folderPath);
+      } catch (e) {
+        _showSnackBar('Failed to rename: $e', isSuccess: false);
+      }
+    }
+  }
+
   Widget _buildFolderTile(FTPFolder folder) {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -1014,27 +1081,34 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
         leading: Icon(Icons.folder, color: Colors.amber[300]),
         title: Text(folder.name, style: const TextStyle(color: Colors.white)),
         subtitle: Text('Folder', style: const TextStyle(color: Colors.white70)),
-        onTap: () =>
-            context.push(RouteNames.folderBrowserPath(folder.fullPath)),
-        trailing: PopupMenuButton<String>(
-          icon: Icon(Icons.more_vert, color: AppColors.primaryLight),
-          color: AppColors.darkSurface,
-          onSelected: (value) async {
-            switch (value) {
-              case 'open':
-                _openInBrowser(folder.fullPath);
-                break;
-              case 'delete':
-                _deleteItem(folder.fullPath, folder.name, true);
-                break;
-            }
-          },
-          itemBuilder: (context) => [
-            _buildMenuItem('open', Icons.open_in_browser, 'Open in browser'),
-            _buildMenuItem('delete', Icons.delete, 'Delete',
-                color: Colors.red[300]),
-          ],
-        ),
+        onTap: () {
+          // Clear search query when navigating to a new folder
+          ref.read(folderBrowserViewModelProvider.notifier).setSearchQuery('');
+          context.push(RouteNames.folderBrowserPath(folder.fullPath));
+        },
+          trailing: PopupMenuButton<String>(
+            icon: Icon(Icons.more_vert, color: AppColors.primaryLight),
+            color: AppColors.darkSurface,
+            onSelected: (value) async {
+              switch (value) {
+                case 'open':
+                  _openInBrowser(folder.fullPath);
+                  break;
+                case 'rename':
+                  _renameItem(folder.fullPath, folder.name, true);
+                  break;
+                case 'delete':
+                  _deleteItem(folder.fullPath, folder.name, true);
+                  break;
+              }
+            },
+            itemBuilder: (context) => [
+              _buildMenuItem('open', Icons.open_in_browser, 'Open in browser'),
+              _buildMenuItem('rename', Icons.edit, 'Rename'),
+              _buildMenuItem('delete', Icons.delete, 'Delete',
+                  color: Colors.red[300]),
+            ],
+          ),
       ),
     );
   }
@@ -1067,6 +1141,9 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
               case 'copy':
                 _copyLink(file.fullPath);
                 break;
+              case 'rename':
+                _renameItem(file.fullPath, file.name, false);
+                break;
               case 'delete':
                 _deleteItem(file.fullPath, file.name, false);
                 break;
@@ -1076,6 +1153,7 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
             _buildMenuItem('download', Icons.download, 'Download'),
             _buildMenuItem('open', Icons.open_in_browser, 'Open in browser'),
             _buildMenuItem('copy', Icons.link, 'Copy link'),
+            _buildMenuItem('rename', Icons.edit, 'Rename'),
             _buildMenuItem('delete', Icons.delete, 'Delete',
                 color: Colors.red[300]),
           ],

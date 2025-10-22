@@ -165,4 +165,18 @@ class FileManagerRepositoryImpl implements FileManagerRepository {
     return await ftpDatasource.downloadFile(
         creds, remoteFilePath, localDirectoryPath);
   }
+
+  @override
+  Future<void> renameFile(String oldPath, String newPath) async {
+    final creds = await _creds();
+    if (creds == null) throw Exception('No credentials');
+    await ftpDatasource.renameFile(creds, oldPath, newPath);
+  }
+
+  @override
+  Future<void> renameFolder(String oldPath, String newPath) async {
+    final creds = await _creds();
+    if (creds == null) throw Exception('No credentials');
+    await ftpDatasource.renameFolder(creds, oldPath, newPath);
+  }
 }

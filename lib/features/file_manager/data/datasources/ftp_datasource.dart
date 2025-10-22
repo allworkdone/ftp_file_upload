@@ -20,7 +20,9 @@ abstract class FTPDatasource {
   Future<void> deleteFolder(
       FTPCredentials credentials, String remoteFolderPath);
   Future<String> downloadFile(FTPCredentials credentials, String remoteFilePath,
-      String localDirectoryPath);
+      String localDirectoryPath, {Function(double)? onProgress});
+  Future<void> renameFile(FTPCredentials credentials, String oldPath, String newPath);
+  Future<void> renameFolder(FTPCredentials credentials, String oldPath, String newPath);
 }
 
 class FTPDatasourceImpl implements FTPDatasource {
@@ -209,7 +211,7 @@ class FTPDatasourceImpl implements FTPDatasource {
 
   @override
   Future<String> downloadFile(FTPCredentials credentials, String remoteFilePath,
-      String localDirectoryPath) async {
+      String localDirectoryPath, {Function(double)? onProgress}) async {
     final ftpConnect = FTPConnect(
       credentials.hostname,
       user: credentials.username,
@@ -240,9 +242,17 @@ class FTPDatasourceImpl implements FTPDatasource {
 
       print('Attempting to download $remoteFilePath to $localFilePath');
 
-      // Download the file
-      final downloaded =
-          await ftpConnect.downloadFile(remoteFilePath, localFile);
+      // Download the file with progress callback if provided
+      final downloaded = await ftpConnect.downloadFile(
+        remoteFilePath, 
+        localFile,
+        onProgress: onProgress != null ? (a, b, c) {
+          if (b > 0) {
+            final progress = a / b;
+            onProgress(progress);
+          }
+        } : null,
+      );
 
       if (!downloaded) {
         print('FTPConnect.downloadFile returned false for $remoteFilePath');
@@ -266,13 +276,13 @@ class FTPDatasourceImpl implements FTPDatasource {
   @override
   Future<String> downloadFileWithRetry(FTPCredentials credentials,
       String remoteFilePath, String localDirectoryPath,
-      {int maxRetries = 3}) async {
+      {int maxRetries = 3, Function(double)? onProgress}) async {
     Exception? lastException;
 
     for (int attempt = 1; attempt <= maxRetries; attempt++) {
       try {
         return await downloadFile(
-            credentials, remoteFilePath, localDirectoryPath);
+            credentials, remoteFilePath, localDirectoryPath, onProgress: onProgress);
       } catch (e) {
         lastException = e is Exception ? e : Exception(e.toString());
         print('Download attempt $attempt failed: $e');
@@ -286,5 +296,57 @@ class FTPDatasourceImpl implements FTPDatasource {
 
     throw lastException ??
         Exception('Download failed after $maxRetries attempts');
+  }
+
+  @override
+  Future<void> renameFile(FTPCredentials credentials, String oldPath, String newPath) async {
+    final ftpConnect = FTPConnect(
+      credentials.hostname,
+      user: credentials.username,
+      pass: credentials.password,
+      port: credentials.port,
+    );
+
+    try {
+      await ftpConnect.connect();
+
+      // Rename the file using the FTP RNFR (rename from) and RNTO (rename to) commands
+      await ftpConnect.rename(oldPath, newPath);
+    } catch (e) {
+      print('Error during file rename: $e');
+      throw Exception('Failed to rename file: $e');
+    } finally {
+      try {
+        await ftpConnect.disconnect();
+      } catch (e) {
+        print('Error disconnecting FTP client after rename: $e');
+      }
+    }
+  }
+
+  @override
+  Future<void> renameFolder(FTPCredentials credentials, String oldPath, String newPath) async {
+    final ftpConnect = FTPConnect(
+      credentials.hostname,
+      user: credentials.username,
+      pass: credentials.password,
+      port: credentials.port,
+    );
+
+    try {
+      await ftpConnect.connect();
+
+      // Rename the folder using the FTP RNFR (rename from) and RNTO (rename to) commands
+      await ftpConnect.rename(oldPath, newPath);
+    } catch (e) {
+      print('Error during folder rename: $e');
+      throw Exception('Failed to rename folder: $e');
+    } finally {
+      try {
+        await ftpConnect.disconnect();
+      } catch (e) {
+        print('Error disconnecting FTP client after rename: $e');
+      }
+    }
   }
 }

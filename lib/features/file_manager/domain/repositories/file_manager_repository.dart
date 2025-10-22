@@ -10,4 +10,6 @@ abstract class FileManagerRepository {
   Future<void> deleteFile(String remoteFilePath);
   Future<void> deleteFolder(String remoteFolderPath);
   Future<String> downloadFile(String remoteFilePath, String localDirectoryPath);
+  Future<void> renameFile(String oldPath, String newPath);
+  Future<void> renameFolder(String oldPath, String newPath);
 }
