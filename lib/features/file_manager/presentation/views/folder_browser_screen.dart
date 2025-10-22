@@ -47,6 +47,7 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
   final Map<String, double> _downloadProgressMap = {};
   final Map<String, bool> _isDownloadingMap = {};
   final Map<String, String> _downloadingFileNameMap = {};
+  final Map<String, VoidCallback?> _cancelDownloadMap = {};
 
   @override
   void initState() {
@@ -247,11 +248,26 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
       final tempDir = Directory.systemTemp;
       final tempPath = tempDir.path;
 
-      // Use repository with progress callback
+      // Create a completer for cancellation
+      final cancelCompleter = Completer<void>();
+
+      // Store the cancel function in the map
+      _cancelDownloadMap[file.fullPath] = () {
+        if (!cancelCompleter.isCompleted) {
+          cancelCompleter.complete();
+        }
+      };
+
+      // Use repository with progress callback and cancellation
       final localFilePath = await getIt<FileManagerRepository>().downloadFile(
         file.fullPath,
         tempPath,
         onProgress: (progress) {
+          // Check if cancellation was requested
+          if (cancelCompleter.isCompleted) {
+            return; // Stop updating progress if cancelled
+          }
+
           final intProgress = (progress * 100).toInt();
           setState(() {
             _downloadProgressMap[file.fullPath] = progress;
@@ -265,7 +281,28 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
             progress: intProgress,
           );
         },
+        onCancel: () {
+          if (!cancelCompleter.isCompleted) {
+            cancelCompleter.complete();
+          }
+        },
       );
+
+      // Check if the download was cancelled
+      if (cancelCompleter.isCompleted) {
+        setState(() => _isDownloadingMap[file.fullPath] = false);
+        await notificationService.showDownloadProgressNotification(
+          id: file.hashCode,
+          title: 'Download cancelled',
+          description: '${file.name} download was cancelled',
+          progress: 10,
+        );
+        Future.delayed(Duration(seconds: 2), () {
+          notificationService.cancelNotification(file.hashCode);
+        });
+        _showSnackBar('Download cancelled', isSuccess: false);
+        return;
+      }
 
       // Read the downloaded file
       final downloadedFile = File(localFilePath);
@@ -293,11 +330,14 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
           progress: 100,
         );
 
-        // Small delay to show 100%
+        // Small delay to show 10%
         await Future.delayed(Duration(milliseconds: 500));
 
         // Mark as not downloading anymore
         setState(() => _isDownloadingMap[file.fullPath] = false);
+
+        // Remove the cancel function from the map
+        _cancelDownloadMap.remove(file.fullPath);
 
         // Cancel the notification after a short delay
         Future.delayed(Duration(seconds: 5), () {
@@ -314,7 +354,7 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
           id: file.hashCode,
           title: 'Download failed',
           description: 'Failed to save ${file.name}',
-          progress: 100,
+          progress: 10,
         );
         Future.delayed(Duration(seconds: 3), () {
           notificationService.cancelNotification(file.hashCode);
@@ -324,6 +364,8 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
       }
     } catch (e) {
       setState(() => _isDownloadingMap[file.fullPath] = false);
+      // Remove the cancel function from the map in case of error
+      _cancelDownloadMap.remove(file.fullPath);
       AppLogger.error('Download failed', e);
       _showSnackBar('Download failed: ${e.toString()}', isSuccess: false);
     }
@@ -949,7 +991,8 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.darkSurface.withOpacity(0.9),
         surfaceTintColor: Colors.transparent,
-        title: Text('Rename ${isFolder ? 'Folder' : 'File'}', style: TextStyle(color: Colors.white)),
+        title: Text('Rename ${isFolder ? 'Folder' : 'File'}',
+            style: TextStyle(color: Colors.white)),
         content: TextField(
           controller: newNameController,
           style: const TextStyle(color: Colors.white),
@@ -960,11 +1003,13 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
             hintStyle: const TextStyle(color: Colors.white54),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: AppColors.primaryLight.withOpacity(0.3)),
+              borderSide:
+                  BorderSide(color: AppColors.primaryLight.withOpacity(0.3)),
             ),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: AppColors.primaryLight.withOpacity(0.3)),
+              borderSide:
+                  BorderSide(color: AppColors.primaryLight.withOpacity(0.3)),
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
@@ -979,7 +1024,8 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel', style: TextStyle(color: Colors.white70)),
+            child:
+                const Text('Cancel', style: TextStyle(color: Colors.white70)),
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, newNameController.text.trim()),
@@ -997,15 +1043,19 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
       try {
         // Get the parent path and construct new path
         final parentPath = path.substring(0, path.lastIndexOf('/'));
-        final newPath = isFolder ? '$parentPath/$result' : '$parentPath/$result';
+        final newPath =
+            isFolder ? '$parentPath/$result' : '$parentPath/$result';
         if (isFolder) {
           await getIt<RenameFolderUsecase>()(path, newPath);
         } else {
           await getIt<RenameFileUsecase>()(path, newPath);
         }
-        _showSnackBar('${isFolder ? 'Folder' : 'File'} renamed successfully', isSuccess: true);
+        _showSnackBar('${isFolder ? 'Folder' : 'File'} renamed successfully',
+            isSuccess: true);
         // Reload the current folder
-        ref.read(folderBrowserViewModelProvider.notifier).load(widget.folderPath);
+        ref
+            .read(folderBrowserViewModelProvider.notifier)
+            .load(widget.folderPath);
       } catch (e) {
         _showSnackBar('Failed to rename: $e', isSuccess: false);
       }
@@ -1029,29 +1079,29 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
           ref.read(folderBrowserViewModelProvider.notifier).setSearchQuery('');
           context.push(RouteNames.folderBrowserPath(folder.fullPath));
         },
-          trailing: PopupMenuButton<String>(
-            icon: Icon(Icons.more_vert, color: AppColors.primaryLight),
-            color: AppColors.darkSurface,
-            onSelected: (value) async {
-              switch (value) {
-                case 'open':
-                  _openInBrowser(folder.fullPath);
-                  break;
-                case 'rename':
-                  _renameItem(folder.fullPath, folder.name, true);
-                  break;
-                case 'delete':
-                  _deleteItem(folder.fullPath, folder.name, true);
-                  break;
-              }
-            },
-            itemBuilder: (context) => [
-              _buildMenuItem('open', Icons.open_in_browser, 'Open in browser'),
-              _buildMenuItem('rename', Icons.edit, 'Rename'),
-              _buildMenuItem('delete', Icons.delete, 'Delete',
-                  color: Colors.red[300]),
-            ],
-          ),
+        trailing: PopupMenuButton<String>(
+          icon: Icon(Icons.more_vert, color: AppColors.primaryLight),
+          color: AppColors.darkSurface,
+          onSelected: (value) async {
+            switch (value) {
+              case 'open':
+                _openInBrowser(folder.fullPath);
+                break;
+              case 'rename':
+                _renameItem(folder.fullPath, folder.name, true);
+                break;
+              case 'delete':
+                _deleteItem(folder.fullPath, folder.name, true);
+                break;
+            }
+          },
+          itemBuilder: (context) => [
+            _buildMenuItem('open', Icons.open_in_browser, 'Open in browser'),
+            _buildMenuItem('rename', Icons.edit, 'Rename'),
+            _buildMenuItem('delete', Icons.delete, 'Delete',
+                color: Colors.red[300]),
+          ],
+        ),
       ),
     );
   }
@@ -1060,7 +1110,7 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
     final isDownloading = _isDownloadingMap[file.fullPath] ?? false;
     final downloadProgress = _downloadProgressMap[file.fullPath] ?? 0.0;
     final downloadingFileName = _downloadingFileNameMap[file.fullPath] ?? '';
-    
+
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       decoration: BoxDecoration(
@@ -1089,7 +1139,8 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
                             child: LinearProgressIndicator(
                               value: downloadProgress,
                               backgroundColor: Colors.white24,
-                              valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                  AppColors.primary),
                               minHeight: 4,
                             ),
                           ),
@@ -1116,13 +1167,19 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
                 : Text('${_formatSize(file.size)}',
                     style: const TextStyle(color: Colors.white70)),
             trailing: isDownloading
-                ? const SizedBox(
-                    width: 24,
-                    height: 24,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
-                    ),
+                ? IconButton(
+                    icon: Icon(Icons.stop, color: Colors.red),
+                    onPressed: () {
+                      final cancelFunc = _cancelDownloadMap[file.fullPath];
+                      if (cancelFunc != null) {
+                        cancelFunc();
+                        setState(() {
+                          _isDownloadingMap[file.fullPath] = false;
+                          _downloadProgressMap.remove(file.fullPath);
+                          _cancelDownloadMap.remove(file.fullPath);
+                        });
+                      }
+                    },
                   )
                 : PopupMenuButton<String>(
                     icon: Icon(Icons.more_vert, color: AppColors.primaryLight),
@@ -1148,7 +1205,8 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
                     },
                     itemBuilder: (context) => [
                       _buildMenuItem('download', Icons.download, 'Download'),
-                      _buildMenuItem('open', Icons.open_in_browser, 'Open in browser'),
+                      _buildMenuItem(
+                          'open', Icons.open_in_browser, 'Open in browser'),
                       _buildMenuItem('copy', Icons.link, 'Copy link'),
                       _buildMenuItem('rename', Icons.edit, 'Rename'),
                       _buildMenuItem('delete', Icons.delete, 'Delete',
@@ -1201,21 +1259,26 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
                       decoration: BoxDecoration(
                         color: AppColors.darkSurface.withOpacity(0.6),
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: AppColors.primaryLight.withOpacity(0.3)),
+                        border: Border.all(
+                            color: AppColors.primaryLight.withOpacity(0.3)),
                       ),
                       child: TextField(
                         decoration: InputDecoration(
                           hintText: 'Search files and folders...',
                           hintStyle: TextStyle(color: Colors.white54),
-                          prefixIcon: Icon(Icons.search, color: AppColors.primaryLight),
-                          suffixIcon: state.searchQuery != null && state.searchQuery!.isNotEmpty
+                          prefixIcon:
+                              Icon(Icons.search, color: AppColors.primaryLight),
+                          suffixIcon: state.searchQuery != null &&
+                                  state.searchQuery!.isNotEmpty
                               ? IconButton(
-                                  icon: Icon(Icons.clear, color: Colors.grey[400]),
+                                  icon: Icon(Icons.clear,
+                                      color: Colors.grey[400]),
                                   onPressed: () => viewModel.setSearchQuery(''),
                                 )
                               : null,
                           border: InputBorder.none,
-                          contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                          contentPadding: EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 12),
                         ),
                         style: TextStyle(color: Colors.white),
                         onChanged: (value) => viewModel.setSearchQuery(value),
@@ -1229,7 +1292,8 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
                     decoration: BoxDecoration(
                       color: AppColors.darkSurface.withOpacity(0.6),
                       borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: AppColors.primaryLight.withOpacity(0.3)),
+                      border: Border.all(
+                          color: AppColors.primaryLight.withOpacity(0.3)),
                     ),
                     child: PopupMenuButton<FolderSortOption>(
                       color: AppColors.darkSurface,
@@ -1240,9 +1304,11 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
                           value: FolderSortOption.name,
                           child: Row(
                             children: [
-                              Icon(Icons.text_fields, color: AppColors.primaryLight),
+                              Icon(Icons.text_fields,
+                                  color: AppColors.primaryLight),
                               const SizedBox(width: 8),
-                              Text('Sort by Name', style: TextStyle(color: Colors.white)),
+                              Text('Sort by Name',
+                                  style: TextStyle(color: Colors.white)),
                             ],
                           ),
                         ),
@@ -1250,9 +1316,11 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
                           value: FolderSortOption.nameReverse,
                           child: Row(
                             children: [
-                              Icon(Icons.text_fields, color: AppColors.primaryLight),
+                              Icon(Icons.text_fields,
+                                  color: AppColors.primaryLight),
                               const SizedBox(width: 8),
-                              Text('Sort by Name (Z-A)', style: TextStyle(color: Colors.white)),
+                              Text('Sort by Name (Z-A)',
+                                  style: TextStyle(color: Colors.white)),
                             ],
                           ),
                         ),
@@ -1274,10 +1342,13 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
                   : RefreshIndicator(
                       backgroundColor: AppColors.darkSurface,
                       color: AppColors.primaryLight,
-                      onRefresh: () => ref.read(folderBrowserViewModelProvider.notifier).load(widget.folderPath),
+                      onRefresh: () => ref
+                          .read(folderBrowserViewModelProvider.notifier)
+                          .load(widget.folderPath),
                       child: ListView(
                         children: [
-                          if (state.error != null) _buildErrorCard(state.error!),
+                          if (state.error != null)
+                            _buildErrorCard(state.error!),
 
                           // Current path
                           Padding(
@@ -1291,21 +1362,34 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
                           ),
 
                           // Results count
-                          if (state.searchQuery != null && state.searchQuery!.isNotEmpty)
+                          if (state.searchQuery != null &&
+                              state.searchQuery!.isNotEmpty)
                             Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 20, vertical: 8),
                               child: Text(
                                 '${state.folders.length + state.files.length} result(s) found for "${state.searchQuery}"',
-                                style: const TextStyle(color: Colors.white54, fontSize: 14),
+                                style: const TextStyle(
+                                    color: Colors.white54, fontSize: 14),
                               ),
                             ),
 
-                          if (state.folders.isNotEmpty) _buildSectionHeader('Folders'),
+                          if (state.folders.isNotEmpty)
+                            _buildSectionHeader('Folders'),
                           ...state.folders.map(_buildFolderTile),
-                          if (state.files.isNotEmpty) _buildSectionHeader('Files'),
+                          if (state.files.isNotEmpty)
+                            _buildSectionHeader('Files'),
                           ...state.files.map(_buildFileTile),
-                          if (state.folders.isEmpty && state.files.isEmpty && (state.searchQuery == null || state.searchQuery!.isEmpty)) _buildEmptyState(),
-                          if (state.folders.isEmpty && state.files.isEmpty && state.searchQuery != null && state.searchQuery!.isNotEmpty) _buildNoSearchResults(),
+                          if (state.folders.isEmpty &&
+                              state.files.isEmpty &&
+                              (state.searchQuery == null ||
+                                  state.searchQuery!.isEmpty))
+                            _buildEmptyState(),
+                          if (state.folders.isEmpty &&
+                              state.files.isEmpty &&
+                              state.searchQuery != null &&
+                              state.searchQuery!.isNotEmpty)
+                            _buildNoSearchResults(),
                         ],
                       ),
                     ),

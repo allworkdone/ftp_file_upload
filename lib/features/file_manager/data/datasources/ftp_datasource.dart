@@ -3,8 +3,8 @@ import 'dart:io';
 import 'package:ftpconnect/ftpconnect.dart';
 
 import '../../../authentication/domain/entities/ftp_credentials.dart';
-import '../../domain/entities/ftp_folder.dart';
 import '../../domain/entities/ftp_file.dart';
+import '../../domain/entities/ftp_folder.dart';
 
 abstract class FTPDatasource {
   Future<List<FTPFolder>> listFolders(FTPCredentials creds, String path);
@@ -20,7 +20,7 @@ abstract class FTPDatasource {
   Future<void> deleteFolder(
       FTPCredentials credentials, String remoteFolderPath);
   Future<String> downloadFile(FTPCredentials credentials, String remoteFilePath,
-      String localDirectoryPath, {Function(double)? onProgress});
+      String localDirectoryPath, {Function(double)? onProgress, Function? onCancel});
   Future<void> renameFile(FTPCredentials credentials, String oldPath, String newPath);
   Future<void> renameFolder(FTPCredentials credentials, String oldPath, String newPath);
 }
@@ -211,7 +211,7 @@ class FTPDatasourceImpl implements FTPDatasource {
 
   @override
   Future<String> downloadFile(FTPCredentials credentials, String remoteFilePath,
-      String localDirectoryPath, {Function(double)? onProgress}) async {
+      String localDirectoryPath, {Function(double)? onProgress, Function? onCancel}) async {
     final ftpConnect = FTPConnect(
       credentials.hostname,
       user: credentials.username,
@@ -253,7 +253,7 @@ class FTPDatasourceImpl implements FTPDatasource {
               progress = a.toDouble() / b.toDouble();
             } else if (a is double && b is double && b > 0) {
               progress = a / b;
-            } else if (b is int && c is int && c > 0) {
+            } else if (b is int && c > 0) {
               progress = b.toDouble() / c.toDouble();
             } else if (a is int && c is int && c > 0) {
               progress = a.toDouble() / c.toDouble();
