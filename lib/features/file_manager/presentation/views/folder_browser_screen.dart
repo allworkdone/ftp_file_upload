@@ -1013,9 +1013,7 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
       child: ListTile(
         leading: Icon(Icons.folder, color: Colors.amber[300]),
         title: Text(folder.name, style: const TextStyle(color: Colors.white)),
-        subtitle: Text(
-            '${folder.totalFiles} files • ${folder.totalSubFolders} folders',
-            style: const TextStyle(color: Colors.white70)),
+        subtitle: Text('Folder', style: const TextStyle(color: Colors.white70)),
         onTap: () =>
             context.push(RouteNames.folderBrowserPath(folder.fullPath)),
         trailing: PopupMenuButton<String>(

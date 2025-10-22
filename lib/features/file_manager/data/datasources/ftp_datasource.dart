@@ -75,20 +75,15 @@ class FTPDatasourceImpl implements FTPDatasource {
     try {
       await _changeTo(ftp, path);
       final entries = await ftp.listDirectoryContent();
-      final folders = <FTPFolder>[];
-      
-      // Create placeholders for all folders first
-      for (final e in entries) {
-        if (e.type == FTPEntryType.DIR) {
-          folders.add(FTPFolder(
-            name: e.name ?? '',
-            path: path,
-            files: [], // We'll populate files only when needed for performance
-            subFolders: [], // We'll populate subfolders only when needed for performance
-          ));
-        }
-      }
-      
+      final folders = entries
+          .where((e) => e.type == FTPEntryType.DIR)
+          .map((e) => FTPFolder(
+                name: e.name ?? '',
+                path: path,
+                files: [], // We'll populate files only when needed for performance
+                subFolders: [], // We'll populate subfolders only when needed for performance
+              ))
+          .toList();
       return folders;
     } finally {
       await ftp.disconnect();

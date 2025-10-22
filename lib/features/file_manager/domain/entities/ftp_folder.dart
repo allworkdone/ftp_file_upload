@@ -38,8 +38,6 @@ class FTPFolder extends Equatable {
     return '$path/$name';
   }
 
-  int get totalFiles => files.length;
-  int get totalSubFolders => subFolders.length;
   bool get isEmpty => files.isEmpty && subFolders.isEmpty;
 
   @override

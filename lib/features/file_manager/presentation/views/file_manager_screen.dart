@@ -286,8 +286,7 @@ class FileManagerScreen extends ConsumerWidget {
                                       Icon(Icons.folder, color: Colors.amber[300]),
                                   title: Text(f.name,
                                       style: const TextStyle(color: Colors.white)),
-                                  subtitle: Text('Folder • ${f.totalFiles} files',
-                                      style: const TextStyle(color: Colors.white70)),
+                                  subtitle: Text('Folder', style: const TextStyle(color: Colors.white70)),
                                   onTap: () => context
                                       .go(RouteNames.folderBrowserPath(f.fullPath)),
                                   trailing: PopupMenuButton<String>(
