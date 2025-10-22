@@ -16,6 +16,7 @@ import '../utils/url_generator.dart';
 import '../../app/router/app_router.dart';
 import '../../shared/data/providers/hive_provider.dart';
 import '../../shared/data/providers/shared_preferences_provider.dart';
+import '../services/notification_service.dart';
 
 // Feature imports
 import '../../features/authentication/data/datasources/auth_local_datasource.dart';
@@ -220,6 +221,11 @@ Future<void> configureDependencies() async {
   getIt.registerLazySingleton<RenameFolderUsecase>(
     () => RenameFolderUsecase(getIt<FileManagerRepository>()),
   );
+
+  // Initialize and register notification service
+  final notificationService = NotificationService();
+  await notificationService.initialize();
+  getIt.registerSingleton<NotificationService>(notificationService);
 
   AppLogger.info('Dependency injection setup completed');
 }

@@ -30,6 +30,7 @@ import '../../../file_manager/domain/usecases/get_files_usecase.dart';
 import '../../../file_manager/domain/usecases/get_folders_usecase.dart';
 import '../../../file_manager/domain/usecases/rename_file_usecase.dart';
 import '../../../file_manager/domain/usecases/rename_folder_usecase.dart';
+import '../../../file_manager/domain/repositories/file_manager_repository.dart';
 import '../viewmodels/folder_browser_viewmodel.dart';
 
 class FolderBrowserScreen extends ConsumerStatefulWidget {
@@ -42,9 +43,10 @@ class FolderBrowserScreen extends ConsumerStatefulWidget {
 }
 
 class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
-  double _downloadProgress = 0.0;
-  bool _isDownloading = false;
-  String _downloadingFileName = '';
+  // Track download progress for each file individually
+  final Map<String, double> _downloadProgressMap = {};
+  final Map<String, bool> _isDownloadingMap = {};
+  final Map<String, String> _downloadingFileNameMap = {};
 
   @override
   void initState() {
@@ -178,15 +180,15 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
 
   Future<void> _downloadFile(FTPFile file) async {
     try {
-      // Reset progress
+      // Reset progress for this specific file
       setState(() {
-        _downloadProgress = 0.0;
-        _isDownloading = true;
-        _downloadingFileName = file.name;
+        _downloadProgressMap[file.fullPath] = 0.0;
+        _isDownloadingMap[file.fullPath] = true;
+        _downloadingFileNameMap[file.fullPath] = file.name;
       });
 
-      // Initialize notification service
-      final notificationService = NotificationService();
+      // Get notification service from dependency injection
+      final notificationService = getIt<NotificationService>();
 
       // Show initial notification
       await notificationService.showDownloadProgressNotification(
@@ -209,7 +211,7 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
           if (shouldShowRationale) {
             final userWantsToGrant = await _showPermissionRationaleDialog();
             if (!userWantsToGrant) {
-              setState(() => _isDownloading = false);
+              setState(() => _isDownloadingMap[file.fullPath] = false);
               await notificationService.cancelNotification(file.hashCode);
               return;
             }
@@ -218,7 +220,7 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
           final granted = await permissionUtils.requestStoragePermission();
 
           if (!granted) {
-            setState(() => _isDownloading = false);
+            setState(() => _isDownloadingMap[file.fullPath] = false);
             await notificationService.cancelNotification(file.hashCode);
             _showSnackBar('Storage permission is required to download files',
                 isSuccess: false);
@@ -235,28 +237,24 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
       // Get credentials from auth
       final auth = ref.read(authViewModelProvider);
       if (auth.credentials == null) {
-        setState(() => _isDownloading = false);
+        setState(() => _isDownloadingMap[file.fullPath] = false);
         await notificationService.cancelNotification(file.hashCode);
         _showSnackBar('No FTP credentials available', isSuccess: false);
         return;
       }
 
-      // Use FTP datasource with progress callback
-      final ftpDatasource = getIt<FTPDatasource>();
-
       // Get temporary directory for download
       final tempDir = Directory.systemTemp;
       final tempPath = tempDir.path;
 
-      // Download file via FTP to temp location with real progress tracking
-      final localFilePath = await ftpDatasource.downloadFile(
-        auth.credentials!,
+      // Use repository with progress callback
+      final localFilePath = await getIt<FileManagerRepository>().downloadFile(
         file.fullPath,
         tempPath,
         onProgress: (progress) {
           final intProgress = (progress * 100).toInt();
           setState(() {
-            _downloadProgress = progress;
+            _downloadProgressMap[file.fullPath] = progress;
           });
 
           // Update notification with progress
@@ -284,8 +282,8 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
           AppLogger.error('Could not clean up temp file', e);
         }
 
-        // Complete progress
-        setState(() => _downloadProgress = 1.0);
+        // Complete progress for this file
+        setState(() => _downloadProgressMap[file.fullPath] = 1.0);
 
         // Update notification to completed
         await notificationService.showDownloadProgressNotification(
@@ -298,7 +296,8 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
         // Small delay to show 100%
         await Future.delayed(Duration(milliseconds: 500));
 
-        setState(() => _isDownloading = false);
+        // Mark as not downloading anymore
+        setState(() => _isDownloadingMap[file.fullPath] = false);
 
         // Cancel the notification after a short delay
         Future.delayed(Duration(seconds: 5), () {
@@ -324,7 +323,7 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
         throw Exception('Failed to save file to Downloads folder');
       }
     } catch (e) {
-      setState(() => _isDownloading = false);
+      setState(() => _isDownloadingMap[file.fullPath] = false);
       AppLogger.error('Download failed', e);
       _showSnackBar('Download failed: ${e.toString()}', isSuccess: false);
     }
@@ -332,73 +331,17 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
 
 // Widget to show download progress
   Widget _buildDownloadProgress() {
-    if (!_isDownloading) return SizedBox.shrink();
-
-    return Container(
-      margin: EdgeInsets.all(16),
-      padding: EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.darkSurface.withOpacity(0.9),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.primary.withOpacity(0.3)),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.download, color: AppColors.primary, size: 24),
-              SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  'Downloading $_downloadingFileName',
-                  style: TextStyle(
-                      color: Colors.white, fontWeight: FontWeight.w500),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ],
-          ),
-          SizedBox(height: 12),
-          Column(
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    '${(_downloadProgress * 100).toInt()}%',
-                    style: TextStyle(
-                      color: AppColors.primary,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
-                    ),
-                  ),
-                  Text(
-                    _getProgressText(),
-                    style: TextStyle(color: Colors.white70, fontSize: 12),
-                  ),
-                ],
-              ),
-              SizedBox(height: 8),
-              LinearProgressIndicator(
-                value: _downloadProgress,
-                backgroundColor: Colors.white24,
-                valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
-                minHeight: 6,
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
+    // This method is no longer used since progress is shown directly on file items
+    return SizedBox.shrink();
   }
 
-  String _getProgressText() {
-    if (_downloadProgress < 0.1) return 'Initializing...';
-    if (_downloadProgress < 0.3) return 'Connecting...';
-    if (_downloadProgress < 0.8) return 'Downloading...';
-    if (_downloadProgress < 0.9) return 'Saving file...';
-    if (_downloadProgress < 1.0) return 'Finalizing...';
+  String _getProgressText(String filePath) {
+    final progress = _downloadProgressMap[filePath] ?? 0.0;
+    if (progress < 0.1) return 'Initializing...';
+    if (progress < 0.3) return 'Connecting...';
+    if (progress < 0.8) return 'Downloading...';
+    if (progress < 0.9) return 'Saving file...';
+    if (progress < 1.0) return 'Finalizing...';
     return 'Complete!';
   }
 
@@ -1114,6 +1057,10 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
   }
 
   Widget _buildFileTile(FTPFile file) {
+    final isDownloading = _isDownloadingMap[file.fullPath] ?? false;
+    final downloadProgress = _downloadProgressMap[file.fullPath] ?? 0.0;
+    final downloadingFileName = _downloadingFileNameMap[file.fullPath] ?? '';
+    
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       decoration: BoxDecoration(
@@ -1121,43 +1068,95 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: AppColors.primaryLight.withOpacity(0.2)),
       ),
-      child: ListTile(
-        leading: Icon(_getFileIcon(file.extension),
-            color: _getFileIconColor(file.extension)),
-        title: Text(file.name, style: const TextStyle(color: Colors.white)),
-        subtitle: Text('${_formatSize(file.size)}',
-            style: const TextStyle(color: Colors.white70)),
-        trailing: PopupMenuButton<String>(
-          icon: Icon(Icons.more_vert, color: AppColors.primaryLight),
-          color: AppColors.darkSurface,
-          onSelected: (value) async {
-            switch (value) {
-              case 'download':
-                _downloadFile(file);
-                break;
-              case 'open':
-                _openInBrowser(file.fullPath);
-                break;
-              case 'copy':
-                _copyLink(file.fullPath);
-                break;
-              case 'rename':
-                _renameItem(file.fullPath, file.name, false);
-                break;
-              case 'delete':
-                _deleteItem(file.fullPath, file.name, false);
-                break;
-            }
-          },
-          itemBuilder: (context) => [
-            _buildMenuItem('download', Icons.download, 'Download'),
-            _buildMenuItem('open', Icons.open_in_browser, 'Open in browser'),
-            _buildMenuItem('copy', Icons.link, 'Copy link'),
-            _buildMenuItem('rename', Icons.edit, 'Rename'),
-            _buildMenuItem('delete', Icons.delete, 'Delete',
-                color: Colors.red[300]),
-          ],
-        ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ListTile(
+            leading: Icon(_getFileIcon(file.extension),
+                color: _getFileIconColor(file.extension)),
+            title: Text(file.name, style: const TextStyle(color: Colors.white)),
+            subtitle: isDownloading
+                ? Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text('${_formatSize(file.size)}',
+                          style: const TextStyle(color: Colors.white70)),
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: LinearProgressIndicator(
+                              value: downloadProgress,
+                              backgroundColor: Colors.white24,
+                              valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
+                              minHeight: 4,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            '${(downloadProgress * 100).toInt()}%',
+                            style: TextStyle(
+                              color: AppColors.primary,
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                      Text(
+                        _getProgressText(file.fullPath),
+                        style: TextStyle(
+                          color: AppColors.primary,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ],
+                  )
+                : Text('${_formatSize(file.size)}',
+                    style: const TextStyle(color: Colors.white70)),
+            trailing: isDownloading
+                ? const SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
+                    ),
+                  )
+                : PopupMenuButton<String>(
+                    icon: Icon(Icons.more_vert, color: AppColors.primaryLight),
+                    color: AppColors.darkSurface,
+                    onSelected: (value) async {
+                      switch (value) {
+                        case 'download':
+                          _downloadFile(file);
+                          break;
+                        case 'open':
+                          _openInBrowser(file.fullPath);
+                          break;
+                        case 'copy':
+                          _copyLink(file.fullPath);
+                          break;
+                        case 'rename':
+                          _renameItem(file.fullPath, file.name, false);
+                          break;
+                        case 'delete':
+                          _deleteItem(file.fullPath, file.name, false);
+                          break;
+                      }
+                    },
+                    itemBuilder: (context) => [
+                      _buildMenuItem('download', Icons.download, 'Download'),
+                      _buildMenuItem('open', Icons.open_in_browser, 'Open in browser'),
+                      _buildMenuItem('copy', Icons.link, 'Copy link'),
+                      _buildMenuItem('rename', Icons.edit, 'Rename'),
+                      _buildMenuItem('delete', Icons.delete, 'Delete',
+                          color: Colors.red[300]),
+                    ],
+                  ),
+          ),
+        ],
       ),
     );
   }

@@ -21,7 +21,7 @@ class NotificationService {
 
   Future<void> initialize() async {
     const AndroidInitializationSettings initializationSettingsAndroid =
-        AndroidInitializationSettings('@mipmap/ic_launcher');
+        AndroidInitializationSettings('ic_notification');
 
     const DarwinInitializationSettings initializationSettingsIOS =
         DarwinInitializationSettings();
@@ -51,6 +51,7 @@ class NotificationService {
       showProgress: true,
       maxProgress: 100,
       onlyAlertOnce: true,
+      icon: 'ic_notification', // Add small icon
     );
 
     const NotificationDetails platformChannelSpecifics =
@@ -81,6 +82,7 @@ class NotificationService {
       showProgress: true,
       maxProgress: 100,
       onlyAlertOnce: false,
+      icon: 'ic_notification', // Add small icon
     );
 
     const NotificationDetails platformChannelSpecifics =

@@ -246,10 +246,27 @@ class FTPDatasourceImpl implements FTPDatasource {
       final downloaded = await ftpConnect.downloadFile(
         remoteFilePath, 
         localFile,
-        onProgress: onProgress != null ? (a, b, c) {
-          if (b > 0) {
-            final progress = a / b;
+        onProgress: onProgress != null ? (a, [b = 0, c = 0]) {
+          try {
+            double progress = 0.0;
+            if (a is int && b is int && b > 0) {
+              progress = a.toDouble() / b.toDouble();
+            } else if (a is double && b is double && b > 0) {
+              progress = a / b;
+            } else if (b is int && c is int && c > 0) {
+              progress = b.toDouble() / c.toDouble();
+            } else if (a is int && c is int && c > 0) {
+              progress = a.toDouble() / c.toDouble();
+            } else if (a is double && a >= 0.0 && a <= 1.0) {
+              // If a is already a progress value between 0 and 1
+              progress = a;
+            }
+            // Ensure progress is between 0 and 1
+            progress = progress.clamp(0.0, 1.0);
             onProgress(progress);
+          } catch (e) {
+            // If there's an error calculating progress, just report 0
+            onProgress(0.0);
           }
         } : null,
       );

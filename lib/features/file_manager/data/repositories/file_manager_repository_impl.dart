@@ -154,7 +154,7 @@ class FileManagerRepositoryImpl implements FileManagerRepository {
 
   @override
   Future<String> downloadFile(
-      String remoteFilePath, String localDirectoryPath) async {
+      String remoteFilePath, String localDirectoryPath, {Function(double)? onProgress}) async {
     final creds = await _creds();
     if (creds == null) throw Exception('No credentials');
 
@@ -163,7 +163,7 @@ class FileManagerRepositoryImpl implements FileManagerRepository {
     }
 
     return await ftpDatasource.downloadFile(
-        creds, remoteFilePath, localDirectoryPath);
+        creds, remoteFilePath, localDirectoryPath, onProgress: onProgress);
   }
 
   @override
