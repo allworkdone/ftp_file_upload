@@ -75,10 +75,20 @@ class FTPDatasourceImpl implements FTPDatasource {
     try {
       await _changeTo(ftp, path);
       final entries = await ftp.listDirectoryContent();
-      final folders = entries
-          .where((e) => e.type == FTPEntryType.DIR)
-          .map((e) => FTPFolder(name: e.name ?? '', path: path))
-          .toList();
+      final folders = <FTPFolder>[];
+      
+      // Create placeholders for all folders first
+      for (final e in entries) {
+        if (e.type == FTPEntryType.DIR) {
+          folders.add(FTPFolder(
+            name: e.name ?? '',
+            path: path,
+            files: [], // We'll populate files only when needed for performance
+            subFolders: [], // We'll populate subfolders only when needed for performance
+          ));
+        }
+      }
+      
       return folders;
     } finally {
       await ftp.disconnect();
@@ -97,12 +107,23 @@ class FTPDatasourceImpl implements FTPDatasource {
                 name: e.name ?? '',
                 path: path,
                 type: FTPFileType.file,
+                size: e.size ?? 0, // Use the size from the FTP entry
+                extension: _getExtension(e.name ?? ''), // Extract the file extension
               ))
           .toList();
       return files;
     } finally {
       await ftp.disconnect();
     }
+  }
+
+  // Helper method to extract file extension
+  String? _getExtension(String fileName) {
+    final lastDotIndex = fileName.lastIndexOf('.');
+    if (lastDotIndex != -1 && lastDotIndex < fileName.length - 1) {
+      return fileName.substring(lastDotIndex + 1).toLowerCase();
+    }
+    return null;
   }
 
   @override
