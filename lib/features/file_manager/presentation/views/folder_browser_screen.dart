@@ -268,6 +268,9 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
             return; // Stop updating progress if cancelled
           }
 
+          // Check if widget is still mounted before calling setState
+          if (!mounted) return;
+
           final intProgress = (progress * 100).toInt();
           setState(() {
             _downloadProgressMap[file.fullPath] = progress;
@@ -290,7 +293,9 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
 
       // Check if the download was cancelled
       if (cancelCompleter.isCompleted) {
-        setState(() => _isDownloadingMap[file.fullPath] = false);
+        if (mounted) {
+          setState(() => _isDownloadingMap[file.fullPath] = false);
+        }
         await notificationService.showDownloadProgressNotification(
           id: file.hashCode,
           title: 'Download cancelled',
@@ -300,7 +305,9 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
         Future.delayed(Duration(seconds: 2), () {
           notificationService.cancelNotification(file.hashCode);
         });
-        _showSnackBar('Download cancelled', isSuccess: false);
+        if (mounted) {
+          _showSnackBar('Download cancelled', isSuccess: false);
+        }
         return;
       }
 
@@ -320,7 +327,9 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
         }
 
         // Complete progress for this file
-        setState(() => _downloadProgressMap[file.fullPath] = 1.0);
+        if (mounted) {
+          setState(() => _downloadProgressMap[file.fullPath] = 1.0);
+        }
 
         // Update notification to completed
         await notificationService.showDownloadProgressNotification(
@@ -334,7 +343,9 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
         await Future.delayed(Duration(milliseconds: 500));
 
         // Mark as not downloading anymore
-        setState(() => _isDownloadingMap[file.fullPath] = false);
+        if (mounted) {
+          setState(() => _isDownloadingMap[file.fullPath] = false);
+        }
 
         // Remove the cancel function from the map
         _cancelDownloadMap.remove(file.fullPath);
@@ -344,10 +355,14 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
           notificationService.cancelNotification(file.hashCode);
         });
 
-        _showSnackBar('Download completed successfully!', isSuccess: true);
+        if (mounted) {
+          _showSnackBar('Download completed successfully!', isSuccess: true);
+        }
 
         // Show download complete dialog
-        _showDownloadCompleteDialog(savedFilePath);
+        if (mounted) {
+          _showDownloadCompleteDialog(savedFilePath);
+        }
       } else {
         // Show error notification
         await notificationService.showDownloadProgressNotification(
@@ -363,11 +378,15 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
         throw Exception('Failed to save file to Downloads folder');
       }
     } catch (e) {
-      setState(() => _isDownloadingMap[file.fullPath] = false);
+      if (mounted) {
+        setState(() => _isDownloadingMap[file.fullPath] = false);
+      }
       // Remove the cancel function from the map in case of error
       _cancelDownloadMap.remove(file.fullPath);
       AppLogger.error('Download failed', e);
-      _showSnackBar('Download failed: ${e.toString()}', isSuccess: false);
+      if (mounted) {
+        _showSnackBar('Download failed: ${e.toString()}', isSuccess: false);
+      }
     }
   }
 
