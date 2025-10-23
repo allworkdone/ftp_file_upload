@@ -1,11 +1,35 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 import 'app/app.dart';
 import 'core/di/injection.dart';
+import 'core/services/notification_service.dart';
 import 'core/utils/app_logger.dart';
+import 'core/utils/permission_utils.dart';
+
+/// Request notification permissions
+Future<void> _requestNotificationPermission() async {
+  try {
+    // For Android, permissions are declared in AndroidManifest.xml
+    // For iOS, we need to request notification permissions
+    if (Platform.isIOS) {
+      await NotificationService().flutterLocalNotificationsPlugin
+          .resolvePlatformSpecificImplementation<IOSFlutterLocalNotificationsPlugin>()
+          ?.requestPermissions(
+            alert: true,
+            badge: true,
+            sound: true,
+          );
+    }
+  } catch (e) {
+    AppLogger.error('Error requesting notification permission', e);
+  }
+}
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -37,6 +61,14 @@ void main() async {
         systemNavigationBarIconBrightness: Brightness.dark,
       ),
     );
+
+    // Initialize notification service
+    await NotificationService().initialize();
+
+    // Request necessary permissions at startup
+    final permissionUtils = PermissionUtils();
+    await permissionUtils.requestStoragePermission();
+    await _requestNotificationPermission();
 
     AppLogger.info('App initialization completed successfully');
 
