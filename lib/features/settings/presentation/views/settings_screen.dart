@@ -142,14 +142,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                             },
                           ),
                           const SizedBox(height: 8),
-                          Row(
+                          Column(
                             children: [
                               TextButton.icon(
                                 onPressed: _resetToDefault,
                                 icon: const Icon(Icons.restore, size: 16),
                                 label: const Text('Reset to Default'),
                               ),
-                              const Spacer(),
                               Text(
                                 'Preview: ${_baseUrlController.text.isNotEmpty ? _baseUrlController.text : "Enter URL"}/path/file.txt',
                                 style: Theme.of(context)

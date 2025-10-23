@@ -36,7 +36,7 @@ dependencies:
   
   # FTP Operations
   flutter_ftp_client:
-    path: ./plugins/flutter_ftp_client
+    path: ../flutter_ftp_client
 
   # File Operations
   file_picker: ^10.3.2

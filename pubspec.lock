@@ -353,10 +353,10 @@ packages:
   flutter_ftp_client:
     dependency: "direct main"
     description:
-      path: "plugins/flutter_ftp_client"
+      path: "../flutter_ftp_client"
       relative: true
     source: path
-    version: "0.0.1"
+    version: "0.0.2"
   flutter_launcher_icons:
     dependency: "direct main"
     description:
