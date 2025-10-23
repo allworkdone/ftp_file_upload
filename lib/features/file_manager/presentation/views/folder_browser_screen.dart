@@ -191,13 +191,17 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
       // Get notification service from dependency injection
       final notificationService = getIt<NotificationService>();
 
-      // Show initial notification
-      await notificationService.showDownloadProgressNotification(
-        id: file.hashCode, // Unique ID for this download
-        title: 'Downloading ${file.name}',
-        description: 'Starting download...',
-        progress: 0,
-      );
+      // Show initial notification - wrap in try-catch to handle potential notification issues
+      try {
+        await notificationService.showDownloadProgressNotification(
+          id: file.hashCode, // Unique ID for this download
+          title: 'Downloading ${file.name}',
+          description: 'Starting download...',
+          progress: 0,
+        );
+      } catch (e) {
+        AppLogger.warning('Could not show download notification: $e');
+      }
 
       // For Android, check and request appropriate permissions
       if (Platform.isAndroid) {
@@ -277,12 +281,16 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
           });
 
           // Update notification with progress
-          notificationService.updateDownloadProgressNotification(
-            id: file.hashCode,
-            title: 'Downloading ${file.name}',
-            description: '${intProgress}% complete',
-            progress: intProgress,
-          );
+          try {
+            notificationService.updateDownloadProgressNotification(
+              id: file.hashCode,
+              title: 'Downloading ${file.name}',
+              description: '${intProgress}% complete',
+              progress: intProgress,
+            );
+          } catch (e) {
+            AppLogger.warning('Could not update download notification: $e');
+          }
         },
         onCancel: () {
           if (!cancelCompleter.isCompleted) {
@@ -296,14 +304,22 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
         if (mounted) {
           setState(() => _isDownloadingMap[file.fullPath] = false);
         }
-        await notificationService.showDownloadProgressNotification(
-          id: file.hashCode,
-          title: 'Download cancelled',
-          description: '${file.name} download was cancelled',
-          progress: 10,
-        );
-        Future.delayed(Duration(seconds: 2), () {
-          notificationService.cancelNotification(file.hashCode);
+        try {
+          await notificationService.showDownloadProgressNotification(
+            id: file.hashCode,
+            title: 'Download cancelled',
+            description: '${file.name} download was cancelled',
+            progress: 10,
+          );
+        } catch (e) {
+          AppLogger.warning('Could not show cancelled notification: $e');
+        }
+        Future.delayed(Duration(seconds: 2), () async {
+          try {
+            await notificationService.cancelNotification(file.hashCode);
+          } catch (e) {
+            AppLogger.warning('Could not cancel notification: $e');
+          }
         });
         if (mounted) {
           _showSnackBar('Download cancelled', isSuccess: false);
@@ -332,12 +348,16 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
         }
 
         // Update notification to completed
-        await notificationService.showDownloadProgressNotification(
-          id: file.hashCode,
-          title: 'Download completed',
-          description: '${file.name} saved successfully',
-          progress: 100,
-        );
+        try {
+          await notificationService.showDownloadProgressNotification(
+            id: file.hashCode,
+            title: 'Download completed',
+            description: '${file.name} saved successfully',
+            progress: 100,
+          );
+        } catch (e) {
+          AppLogger.warning('Could not show completed notification: $e');
+        }
 
         // Small delay to show 10%
         await Future.delayed(Duration(milliseconds: 500));
@@ -351,8 +371,12 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
         _cancelDownloadMap.remove(file.fullPath);
 
         // Cancel the notification after a short delay
-        Future.delayed(Duration(seconds: 5), () {
-          notificationService.cancelNotification(file.hashCode);
+        Future.delayed(Duration(seconds: 5), () async {
+          try {
+            await notificationService.cancelNotification(file.hashCode);
+          } catch (e) {
+            AppLogger.warning('Could not cancel completed notification: $e');
+          }
         });
 
         if (mounted) {

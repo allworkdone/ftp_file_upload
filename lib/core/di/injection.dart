@@ -76,8 +76,6 @@ Future<void> configureDependencies() async {
 
   getIt.registerLazySingleton<DioClient>(() => DioClient());
 
-  getIt.registerLazySingleton<AppLogger>(() => AppLogger());
-
   getIt.registerLazySingleton<FileUtils>(() => FileUtils());
 
   getIt.registerLazySingleton<PermissionUtils>(() => PermissionUtils());
