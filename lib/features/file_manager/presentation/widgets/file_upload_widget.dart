@@ -1,7 +1,9 @@
 import 'dart:io';
+import 'dart:isolate';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:cross_file/cross_file.dart';
@@ -15,6 +17,14 @@ import '../../presentation/viewmodels/upload_viewmodel.dart';
 import '../../../../core/di/injection.dart';
 import 'folder_picker_dialog.dart';
 import '../../../../app/theme/app_colors.dart'; // Import your purple theme
+
+// Data structure for isolate communication
+class _ZipData {
+  final String directoryPath;
+  final String outputPath;
+
+  _ZipData(this.directoryPath, this.outputPath);
+}
 
 // Data class for managing bulk upload items
 class BulkUploadItem {
@@ -149,48 +159,98 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
     return i <= 0 ? '/' : s.substring(0, i);
   }
 
-  Future<PlatformFile> _createZipFromDirectory(String directoryPath) async {
-    setState(() => _isProcessingBundle = true);
+  // Isolate function to create zip file
+  static void _createZipInIsolate(_ZipData data) {
+    final directoryPath = data.directoryPath;
+    final outputPath = data.outputPath;
+    
     try {
+      print('Starting zip creation for directory: $directoryPath');
+      print('Output path: $outputPath');
+      
       final dirName = directoryPath.split('/').last;
-      final zipFile = File('${Directory.systemTemp.path}/$dirName.zip');
+      final zipFile = File(outputPath);
       final archive = Archive();
       final directory = Directory(directoryPath);
 
-      await for (final entity in directory.list(recursive: true)) {
+      print('Processing directory contents');
+      // Process directory contents
+      directory.listSync(recursive: true).forEach((entity) {
         try {
           if (entity is File) {
-            final relativePath =
-                entity.path.substring(directoryPath.length + 1);
-            final fileBytes = await entity.readAsBytes();
-            archive.addFile(
-                ArchiveFile(relativePath, fileBytes.length, fileBytes));
+            final relativePath = entity.path.substring(directoryPath.length + 1);
+            print('Adding file: $relativePath');
+            final fileBytes = entity.readAsBytesSync();
+            archive.addFile(ArchiveFile(relativePath, fileBytes.length, fileBytes));
           } else if (entity is Directory) {
-            final relativePath =
-                entity.path.substring(directoryPath.length + 1) + '/';
+            final relativePath = entity.path.substring(directoryPath.length + 1) + '/';
+            print('Adding directory: $relativePath');
             archive.addFile(ArchiveFile(relativePath, 0, []));
           }
         } catch (e) {
           print('Failed to add ${entity.path}: $e');
         }
-      }
+      });
 
+      print('Encoding zip archive');
       final zipData = ZipEncoder().encode(archive);
       if (zipData != null) {
-        await zipFile.writeAsBytes(zipData);
-        return PlatformFile(
-            name: '$dirName.zip',
-            size: await zipFile.length(),
-            path: zipFile.path);
+        print('Writing zip data to file');
+        zipFile.writeAsBytesSync(zipData);
+        print('Zip file written successfully');
       } else {
+        print('Failed to encode zip archive');
         throw Exception('Failed to encode zip archive');
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
+      print('Error creating zip: $e');
+      print('Stack trace: $stackTrace');
+      // Re-throw the exception so it can be caught by the caller
+      throw Exception('Error creating zip: $e');
+    }
+  }
+
+  Future<PlatformFile> _createZipFromDirectory(String directoryPath) async {
+    setState(() => _isProcessingBundle = true);
+    try {
+      print('Starting zip creation for directory: $directoryPath');
+      final dirName = directoryPath.split('/').last;
+      // Use a simpler output path without special characters
+      final sanitizedDirName = dirName.replaceAll(RegExp(r'[<>:"/\\|?*\x00-\x1F]'), '_');
+      final outputPath = '${Directory.systemTemp.path}/$sanitizedDirName.zip';
+      print('Output path: $outputPath');
+      
+      // Create zip data for isolate
+      final zipData = _ZipData(directoryPath, outputPath);
+      
+      // Create and run isolate with a simpler approach
+      print('Creating isolate for zip creation');
+      // Use compute instead of Isolate.run for better compatibility
+      await compute(_createZipInIsolate, zipData);
+      print('Isolate completed');
+      
+      // Check if file was created successfully
+      final zipFile = File(outputPath);
+      print('Checking if zip file exists: ${await zipFile.exists()}');
+      if (await zipFile.exists()) {
+        final size = await zipFile.length();
+        print('Zip file size: $size');
+        return PlatformFile(
+            name: '$sanitizedDirName.zip',
+            size: size,
+            path: zipFile.path);
+      } else {
+        print('Zip file does not exist at: $outputPath');
+        throw Exception('Failed to create zip archive');
+      }
+    } catch (e, stackTrace) {
+      print('Error creating zip from directory: $e');
+      print('Stack trace: $stackTrace');
       throw Exception('Failed to create zip archive: $e');
     } finally {
       setState(() => _isProcessingBundle = false);
     }
- }
+  }
 
   Future<void> _pickFile() async {
     try {
@@ -243,15 +303,20 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
     if (files.isEmpty) return;
 
     try {
+      print('Processing ${files.length} dropped files');
       for (XFile xFile in files) {
+        print('Processing file: ${xFile.path}');
         final stat = await FileStat.stat(xFile.path);
+        print('File type: ${stat.type}');
 
         if (stat.type == FileSystemEntityType.directory) {
+          print('Processing directory: ${xFile.path}');
           final zipFile = await _createZipFromDirectory(xFile.path);
           _bulkUploadItems.add(BulkUploadItem(zipFile));
           _showSnackBar(
               'Directory converted to zip: ${zipFile.name}', Colors.green);
         } else {
+          print('Processing file: ${xFile.path}');
           final fileSize = await File(xFile.path).length();
           final platformFile = PlatformFile(
               name: xFile.name, size: fileSize, path: xFile.path);
@@ -262,7 +327,10 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
       setState(() {
         _isBulkUpload = true;
       });
-    } catch (e) {
+      print('Finished processing dropped files');
+    } catch (e, stackTrace) {
+      print('Error processing dropped files: $e');
+      print('Stack trace: $stackTrace');
       _showError('Failed to process dropped file: $e');
     }
   }
@@ -275,7 +343,11 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
         content: Text(message),
         backgroundColor: color,
         duration: const Duration(seconds: 3),
-        behavior: SnackBarBehavior.floating,
+        behavior: SnackBarBehavior.floating, // Changed back to floating to allow margin
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(8),
+        ),
+        margin: const EdgeInsets.all(16),
       ));
     }
   }
