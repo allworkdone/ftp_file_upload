@@ -540,87 +540,82 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
   }
 
   Widget _buildDropArea() {
-    return DropTarget(
-      onDragDone: (detail) => _handleDroppedFiles(detail.files),
-      onDragEntered: (_) => setState(() => _isDragging = true),
-      onDragExited: (_) => setState(() => _isDragging = false),
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(vertical: 24),
-        decoration: BoxDecoration(
-          border: Border.all(
-            color: _isDragging
-                ? AppColors.primaryLight
-                : AppColors.primaryLight.withOpacity(0.4),
-            width: _isDragging ? 2.5 : 1.5,
-          ),
-          borderRadius: BorderRadius.circular(16),
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(vertical: 24),
+      decoration: BoxDecoration(
+        border: Border.all(
           color: _isDragging
-              ? AppColors.primaryLight.withOpacity(0.1)
-              : AppColors.darkSurface.withOpacity(0.6),
-          boxShadow: _isDragging
-              ? [
-                  BoxShadow(
-                    color: AppColors.primaryLight.withOpacity(0.3),
-                    blurRadius: 20,
-                    spreadRadius: 3,
-                  ),
-                ]
-              : null,
+              ? AppColors.primaryLight
+              : AppColors.primaryLight.withOpacity(0.4),
+          width: _isDragging ? 2.5 : 1.5,
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (_isProcessingBundle) ...[
-              CircularProgressIndicator(
-                color: AppColors.primaryLight,
-                year2023: false,
-              ),
-              const SizedBox(height: 16),
-              const Text('Converting directory to zip...',
-                  style: TextStyle(color: Colors.white70)),
-            ] else ...[
-              Icon(
-                _isDragging ? Icons.file_download : Icons.upload_file,
-                size: 48,
-                color: _isDragging
-                    ? AppColors.primaryLight
-                    : AppColors.primaryLight.withOpacity(0.8),
-              ),
-              const SizedBox(height: 16),
-              Text(
-                _isDragging
-                    ? 'Release to add file or directory'
-                    : (_bulkUploadItems.isEmpty
-                        ? 'Drag & drop files/directories here'
-                        : '${_bulkUploadItems.length} file(s) selected'),
-                style: TextStyle(
-                  color: _isDragging ? AppColors.primaryLight : Colors.white70,
-                  fontWeight: _isDragging ? FontWeight.w600 : FontWeight.normal,
-                  fontSize: 16,
+        borderRadius: BorderRadius.circular(16),
+        color: _isDragging
+            ? AppColors.primaryLight.withOpacity(0.1)
+            : AppColors.darkSurface.withOpacity(0.6),
+        boxShadow: _isDragging
+            ? [
+                BoxShadow(
+                  color: AppColors.primaryLight.withOpacity(0.3),
+                  blurRadius: 20,
+                  spreadRadius: 3,
                 ),
-                textAlign: TextAlign.center,
+              ]
+            : null,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (_isProcessingBundle) ...[
+            CircularProgressIndicator(
+              color: AppColors.primaryLight,
+              year2023: false,
+            ),
+            const SizedBox(height: 16),
+            const Text('Converting directory to zip...',
+                style: TextStyle(color: Colors.white70)),
+          ] else ...[
+            Icon(
+              _isDragging ? Icons.file_download : Icons.upload_file,
+              size: 48,
+              color: _isDragging
+                  ? AppColors.primaryLight
+                  : AppColors.primaryLight.withOpacity(0.8),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              _isDragging
+                  ? 'Release to add file or directory'
+                  : (_bulkUploadItems.isEmpty
+                      ? 'Drag & drop files/directories here'
+                      : '${_bulkUploadItems.length} file(s) selected'),
+              style: TextStyle(
+                color: _isDragging ? AppColors.primaryLight : Colors.white70,
+                fontWeight: _isDragging ? FontWeight.w600 : FontWeight.normal,
+                fontSize: 16,
               ),
-              const SizedBox(height: 20),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  _buildNeonButton(
-                    onPressed: _isProcessingBundle ? null : _pickFile,
-                    icon: Icons.insert_drive_file,
-                    label: 'Select File',
-                  ),
-                  const SizedBox(width: 16),
-                  _buildNeonButton(
-                    onPressed: _isProcessingBundle ? null : _pickDirectory,
-                    icon: Icons.folder,
-                    label: 'Select Directory',
-                  ),
-                ],
-              ),
-            ],
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 20),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                _buildNeonButton(
+                  onPressed: _isProcessingBundle ? null : _pickFile,
+                  icon: Icons.insert_drive_file,
+                  label: 'Select File',
+                ),
+                const SizedBox(width: 16),
+                _buildNeonButton(
+                  onPressed: _isProcessingBundle ? null : _pickDirectory,
+                  icon: Icons.folder,
+                  label: 'Select Directory',
+                ),
+              ],
+            ),
           ],
-        ),
+        ],
       ),
     );
   }
@@ -667,399 +662,307 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
     final upload = ref.watch(uploadViewModelProvider);
     final items = _buildFolderItems();
 
-    return Container(
-      decoration: const BoxDecoration(
-        gradient: RadialGradient(
-          center: Alignment.topRight,
-          radius: 1.5,
-          colors: [
-            Color(0xFF1A003),
-            AppColors.darkBackground,
-          ],
-          stops: [0.1, 0.9],
-        ),
-      ),
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Client-side Upload',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-                shadows: [
-                  Shadow(
-                    color: AppColors.primaryLight,
-                    blurRadius: 10,
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 20),
-            _buildDropArea(),
-            if (_isBulkUpload && _bulkUploadItems.isNotEmpty) ...[
-              const SizedBox(height: 16),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  TextButton.icon(
-                    onPressed: _removeSelectedFile,
-                    icon: const Icon(Icons.clear, size: 18, color: Colors.red),
-                    label: const Text('Remove all files',
-                        style: TextStyle(color: Colors.red)),
-                    style: TextButton.styleFrom(
-                      foregroundColor: Colors.red,
-                      side: BorderSide(color: Colors.red.withOpacity(0.5)),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              // Display bulk upload items with rename and remove functionality
-              Container(
-                decoration: BoxDecoration(
-                  color: AppColors.darkSurface.withOpacity(0.8),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: AppColors.primaryLight.withOpacity(0.3)),
+    return DropTarget(
+      onDragDone: (detail) {
+        // Handle dropped files on the entire screen
+        if (detail.files.isNotEmpty) {
+          _handleDroppedFiles(detail.files);
+        }
+      },
+      onDragEntered: (_) => setState(() => _isDragging = true),
+      onDragExited: (_) => setState(() => _isDragging = false),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        decoration: BoxDecoration(
+          gradient: _isDragging
+              ? const RadialGradient(
+                  center: Alignment.topRight,
+                  radius: 1.5,
+                  colors: [
+                    Color(0xFF1A0033), // More transparent version of the color
+                    Color(0xFF1A003), // Darker background when dragging
+                  ],
+                  stops: [0.1, 0.9],
+                )
+              : const RadialGradient(
+                  center: Alignment.topRight,
+                  radius: 1.5,
+                  colors: [
+                    Color(0xFF1A003),
+                    AppColors.darkBackground,
+                  ],
+                  stops: [0.1, 0.9],
                 ),
-                child: Column(
+        ),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Client-side Upload',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                  shadows: [
+                    Shadow(
+                      color: AppColors.primaryLight,
+                      blurRadius: 10,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 20),
+              _buildDropArea(),
+              if (_isBulkUpload && _bulkUploadItems.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: AppColors.darkBackground.withOpacity(0.6),
-                        borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
-                        border: Border(
-                          bottom: BorderSide(color: AppColors.primaryLight.withOpacity(0.3)),
+                    TextButton.icon(
+                      onPressed: _removeSelectedFile,
+                      icon: const Icon(Icons.clear, size: 18, color: Colors.red),
+                      label: const Text('Remove all files',
+                          style: TextStyle(color: Colors.red)),
+                      style: TextButton.styleFrom(
+                        foregroundColor: Colors.red,
+                        side: BorderSide(color: Colors.red.withOpacity(0.5)),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                // Display bulk upload items with rename and remove functionality
+                Container(
+                  decoration: BoxDecoration(
+                    color: AppColors.darkSurface.withOpacity(0.8),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppColors.primaryLight.withOpacity(0.3)),
+                  ),
+                  child: Column(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: AppColors.darkBackground.withOpacity(0.6),
+                          borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
+                          border: Border(
+                            bottom: BorderSide(color: AppColors.primaryLight.withOpacity(0.3)),
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Bulk Upload Files (${_bulkUploadItems.length})',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Bulk Upload Files (${_bulkUploadItems.length})',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 16,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    SizedBox(
-                      height: 200,
-                      child: ListView.builder(
-                        shrinkWrap: true,
-                        itemCount: _bulkUploadItems.length,
-                        itemBuilder: (context, index) {
-                          final item = _bulkUploadItems[index];
-                          return Padding(
-                            padding: const EdgeInsets.all(8.0),
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: TextFormField(
-                                    initialValue: item.customName,
-                                    enabled: _editModeIndices.contains(index),
-                                    onChanged: (value) {
+                      SizedBox(
+                        height: 200,
+                        child: ListView.builder(
+                          shrinkWrap: true,
+                          itemCount: _bulkUploadItems.length,
+                          itemBuilder: (context, index) {
+                            final item = _bulkUploadItems[index];
+                            return Padding(
+                              padding: const EdgeInsets.all(8.0),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: TextFormField(
+                                      initialValue: item.customName,
+                                      enabled: _editModeIndices.contains(index),
+                                      onChanged: (value) {
+                                        setState(() {
+                                          // Preserve the original file extension when renaming
+                                          final originalFile = _bulkUploadItems[index].file;
+                                          final originalExtension = originalFile.extension?.isNotEmpty == true ? '.${originalFile.extension}' : '';
+                                          
+                                          // If the new name doesn't end with the original extension, add it back
+                                          if (originalExtension.isNotEmpty && !value.endsWith(originalExtension)) {
+                                            _bulkUploadItems[index].customName = '$value$originalExtension';
+                                          } else {
+                                            _bulkUploadItems[index].customName = value;
+                                          }
+                                        });
+                                      },
+                                      validator: (value) {
+                                        if (value == null || value.isEmpty) {
+                                          return 'Filename cannot be empty';
+                                        }
+                                        // Check for invalid characters in filename
+                                        if (value.contains(RegExp(r'[<>:"/\\|?*]'))) {
+                                          return 'Filename contains invalid characters';
+                                        }
+                                        return null;
+                                      },
+                                      style: TextStyle(
+                                        color: _editModeIndices.contains(index) ? Colors.white : Colors.white70,
+                                      ),
+                                      decoration: InputDecoration(
+                                        labelText: 'Rename file',
+                                        labelStyle: TextStyle(
+                                          color: _editModeIndices.contains(index) ? Colors.white70 : Colors.white54,
+                                        ),
+                                        filled: true,
+                                        fillColor: _editModeIndices.contains(index) ? AppColors.darkBackground : AppColors.darkBackground.withOpacity(0.5),
+                                        border: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(8),
+                                          borderSide: BorderSide(color: AppColors.primaryLight.withOpacity(0.3)),
+                                        ),
+                                        enabledBorder: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(8),
+                                          borderSide: BorderSide(color: AppColors.primaryLight.withOpacity(_editModeIndices.contains(index) ? 0.3 : 0.1)),
+                                        ),
+                                        focusedBorder: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(8),
+                                          borderSide: BorderSide(color: AppColors.primaryLight, width: _editModeIndices.contains(index) ? 2 : 1),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  IconButton(
+                                    onPressed: () {
                                       setState(() {
-                                        // Preserve the original file extension when renaming
-                                        final originalFile = _bulkUploadItems[index].file;
-                                        final originalExtension = originalFile.extension?.isNotEmpty == true ? '.${originalFile.extension}' : '';
-                                        
-                                        // If the new name doesn't end with the original extension, add it back
-                                        if (originalExtension.isNotEmpty && !value.endsWith(originalExtension)) {
-                                          _bulkUploadItems[index].customName = '$value$originalExtension';
+                                        if (_editModeIndices.contains(index)) {
+                                          _editModeIndices.remove(index);
                                         } else {
-                                          _bulkUploadItems[index].customName = value;
+                                          _editModeIndices.add(index);
                                         }
                                       });
                                     },
-                                    validator: (value) {
-                                      if (value == null || value.isEmpty) {
-                                        return 'Filename cannot be empty';
-                                      }
-                                      // Check for invalid characters in filename
-                                      if (value.contains(RegExp(r'[<>:"/\\|?*]'))) {
-                                        return 'Filename contains invalid characters';
-                                      }
-                                      return null;
-                                    },
-                                    style: TextStyle(
-                                      color: _editModeIndices.contains(index) ? Colors.white : Colors.white70,
+                                    icon: Icon(
+                                      _editModeIndices.contains(index) ? Icons.edit : Icons.edit_outlined,
+                                      color: _editModeIndices.contains(index) ? AppColors.primaryLight : Colors.white70,
+                                      size: 20,
                                     ),
-                                    decoration: InputDecoration(
-                                      labelText: 'Rename file',
-                                      labelStyle: TextStyle(
-                                        color: _editModeIndices.contains(index) ? Colors.white70 : Colors.white54,
-                                      ),
-                                      filled: true,
-                                      fillColor: _editModeIndices.contains(index) ? AppColors.darkBackground : AppColors.darkBackground.withOpacity(0.5),
-                                      border: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(8),
-                                        borderSide: BorderSide(color: AppColors.primaryLight.withOpacity(0.3)),
-                                      ),
-                                      enabledBorder: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(8),
-                                        borderSide: BorderSide(color: AppColors.primaryLight.withOpacity(_editModeIndices.contains(index) ? 0.3 : 0.1)),
-                                      ),
-                                      focusedBorder: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(8),
-                                        borderSide: BorderSide(color: AppColors.primaryLight, width: _editModeIndices.contains(index) ? 2 : 1),
-                                      ),
-                                    ),
+                                    tooltip: _editModeIndices.contains(index) ? 'Finish editing' : 'Edit name',
                                   ),
-                                ),
-                                const SizedBox(width: 8),
-                                IconButton(
-                                  onPressed: () {
-                                    setState(() {
-                                      if (_editModeIndices.contains(index)) {
-                                        _editModeIndices.remove(index);
-                                      } else {
-                                        _editModeIndices.add(index);
-                                      }
-                                    });
-                                  },
-                                  icon: Icon(
-                                    _editModeIndices.contains(index) ? Icons.edit : Icons.edit_outlined,
-                                    color: _editModeIndices.contains(index) ? AppColors.primaryLight : Colors.white70,
-                                    size: 20,
+                                  const SizedBox(width: 8),
+                                  IconButton(
+                                    onPressed: () => _removeBulkItem(index),
+                                    icon: Icon(Icons.delete, color: Colors.red[300]),
+                                    tooltip: 'Remove file',
                                   ),
-                                  tooltip: _editModeIndices.contains(index) ? 'Finish editing' : 'Edit name',
-                                ),
-                                const SizedBox(width: 8),
-                                IconButton(
-                                  onPressed: () => _removeBulkItem(index),
-                                  icon: Icon(Icons.close, color: Colors.red[300]),
-                                  tooltip: 'Remove file',
-                                ),
-                              ],
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-            const SizedBox(height: 24),
-            const Text('Remote Folder',
-                style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w500)),
-            const SizedBox(height: 8),
-            Focus(
-              onFocusChange: (hasFocus) => setState(() {}),
-              child: Container(
-                decoration: _buildNeonGlow(_folderFocus.hasFocus),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: DropdownButtonFormField<String>(
-                        value: _currentFolderValue(items),
-                        hint: Text(_folderCtrl.text,
-                            style: const TextStyle(color: Colors.white70)),
-                        isExpanded: true,
-                        items: items,
-                        dropdownColor: AppColors.darkSurface,
-                        style: const TextStyle(color: Colors.white),
-                        decoration: InputDecoration(
-                          filled: true,
-                          fillColor: AppColors.darkSurface.withOpacity(0.8),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(16),
-                            borderSide: BorderSide(
-                                color: AppColors.primaryLight.withOpacity(0.3)),
-                          ),
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(16),
-                            borderSide: BorderSide(
-                                color: AppColors.primaryLight.withOpacity(0.3)),
-                          ),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(16),
-                            borderSide: const BorderSide(
-                                color: AppColors.primaryLight, width: 2),
-                          ),
+                                ],
+                              ),
+                            );
+                          },
                         ),
-                        onChanged: (v) async {
-                          setState(
-                              () => _folderCtrl.text = v ?? _folderCtrl.text);
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+              const SizedBox(height: 24),
+              const Text('Remote Folder',
+                  style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w500)),
+              const SizedBox(height: 8),
+              Focus(
+                onFocusChange: (hasFocus) => setState(() {}),
+                child: Container(
+                  decoration: _buildNeonGlow(_folderFocus.hasFocus),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: DropdownButtonFormField<String>(
+                          value: _currentFolderValue(items),
+                          hint: Text(_folderCtrl.text,
+                              style: const TextStyle(color: Colors.white70)),
+                          isExpanded: true,
+                          items: items,
+                          dropdownColor: AppColors.darkSurface,
+                          style: const TextStyle(color: Colors.white),
+                          decoration: InputDecoration(
+                            filled: true,
+                            fillColor: AppColors.darkSurface.withOpacity(0.8),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(16),
+                              borderSide: BorderSide(
+                                  color: AppColors.primaryLight.withOpacity(0.3)),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(16),
+                              borderSide: BorderSide(
+                                  color: AppColors.primaryLight.withOpacity(0.3)),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(16),
+                              borderSide: const BorderSide(
+                                  color: AppColors.primaryLight, width: 2),
+                            ),
+                          ),
+                          onChanged: (v) async {
+                            setState(
+                                () => _folderCtrl.text = v ?? _folderCtrl.text);
+                            widget.onFolderChanged?.call(_folderCtrl.text);
+                            await _loadFolders(_folderCtrl.text);
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      IconButton(
+                        tooltip: 'Create folder',
+                        onPressed: _createFolder,
+                        icon: Icon(Icons.create_new_folder_outlined,
+                            color: AppColors.primaryLight),
+                      ),
+                      IconButton(
+                        tooltip: 'Refresh',
+                        onPressed: _loadingFolders
+                            ? null
+                            : () => _loadFolders(_folderCtrl.text),
+                        icon: Icon(Icons.refresh,
+                            color: _loadingFolders
+                                ? Colors.grey
+                                : AppColors.primaryLight),
+                      ),
+                      IconButton(
+                        tooltip: 'Browse…',
+                        onPressed: () async {
+                          final selected = await showDialog<String>(
+                            context: context,
+                            builder: (_) =>
+                                FolderPickerDialog(initialPath: _folderCtrl.text),
+                          );
+                          if (selected?.isNotEmpty == true) {
+                            setState(() => _folderCtrl.text = selected!);
+                            widget.onFolderChanged?.call(_folderCtrl.text);
+                            await _loadFolders(_folderCtrl.text);
+                          }
+                        },
+                        icon: Icon(Icons.folder_open,
+                            color: AppColors.primaryLight),
+                      ),
+                      IconButton(
+                        tooltip: 'Up one level',
+                        onPressed: () async {
+                          final p = _parentOf(_folderCtrl.text);
+                          setState(() => _folderCtrl.text = p);
                           widget.onFolderChanged?.call(_folderCtrl.text);
                           await _loadFolders(_folderCtrl.text);
                         },
+                        icon: Icon(Icons.arrow_upward,
+                            color: AppColors.primaryLight),
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    IconButton(
-                      tooltip: 'Create folder',
-                      onPressed: _createFolder,
-                      icon: Icon(Icons.create_new_folder_outlined,
-                          color: AppColors.primaryLight),
-                    ),
-                    IconButton(
-                      tooltip: 'Refresh',
-                      onPressed: _loadingFolders
-                          ? null
-                          : () => _loadFolders(_folderCtrl.text),
-                      icon: Icon(Icons.refresh,
-                          color: _loadingFolders
-                              ? Colors.grey
-                              : AppColors.primaryLight),
-                    ),
-                    IconButton(
-                      tooltip: 'Browse…',
-                      onPressed: () async {
-                        final selected = await showDialog<String>(
-                          context: context,
-                          builder: (_) =>
-                              FolderPickerDialog(initialPath: _folderCtrl.text),
-                        );
-                        if (selected?.isNotEmpty == true) {
-                          setState(() => _folderCtrl.text = selected!);
-                          widget.onFolderChanged?.call(_folderCtrl.text);
-                          await _loadFolders(_folderCtrl.text);
-                        }
-                      },
-                      icon: Icon(Icons.folder_open,
-                          color: AppColors.primaryLight),
-                    ),
-                    IconButton(
-                      tooltip: 'Up one level',
-                      onPressed: () async {
-                        final p = _parentOf(_folderCtrl.text);
-                        setState(() => _folderCtrl.text = p);
-                        widget.onFolderChanged?.call(_folderCtrl.text);
-                        await _loadFolders(_folderCtrl.text);
-                      },
-                      icon: Icon(Icons.arrow_upward,
-                          color: AppColors.primaryLight),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 20),
-            const Text('Chunk size',
-                style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w500)),
-            const SizedBox(height: 8),
-            Container(
-              decoration: BoxDecoration(
-                color: AppColors.darkSurface.withOpacity(0.8),
-                borderRadius: BorderRadius.circular(16),
-                border:
-                    Border.all(color: AppColors.primaryLight.withOpacity(0.3)),
-              ),
-              child: DropdownButtonFormField<int>(
-                value: _chunkSizeMB,
-                dropdownColor: AppColors.darkSurface,
-                style: const TextStyle(color: AppColors.darkSurface),
-                items: const [1, 2, 4, 8, 16, 32]
-                    .map((e) => DropdownMenuItem(
-                        value: e,
-                        child: Text('$e MB',
-                            style: TextStyle(color: Colors.white))))
-                    .toList(),
-                onChanged: (v) =>
-                    setState(() => _chunkSizeMB = v ?? _chunkSizeMB),
-                decoration: InputDecoration(
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-                  border: InputBorder.none,
-                  fillColor: AppColors.darkBackground,
-                ),
-              ),
-            ),
-            const SizedBox(height: 24),
-            SizedBox(
-              width: double.infinity,
-              child: _buildNeonButton(
-                onPressed:
-                    _bulkUploadItems.isEmpty || upload.uploading || _isProcessingBundle
-                        ? null
-                        : _upload,
-                icon: Icons.cloud_upload_outlined,
-                label: _isUploadInProgress 
-                    ? 'Uploading... (${_bulkUploadItems.length} files)' 
-                    : 'Execute upload',
-              ),
-            ),
-            if (upload.uploading) ...[
-              const SizedBox(height: 20),
-              LinearProgressIndicator(
-                year2023: false,
-                value: upload.progress?.progressPercentage != null
-                    ? upload.progress!.progressPercentage / 100.0
-                    : null,
-                backgroundColor: AppColors.darkSurface,
-                color: AppColors.primaryLight,
-                minHeight: 6,
-                borderRadius: BorderRadius.circular(3),
-                valueColor: AlwaysStoppedAnimation<Color>(
-                  Theme.of(context).colorScheme.primary, // M3 primary color
-                ),
-              ),
-              const SizedBox(height: 12),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Expanded(
-                    child: Text(
-                      upload.progress == null
-                          ? 'Starting…'
-                          : '${upload.progress!.fileName} — ${upload.progress!.progressPercentage.toStringAsFixed(0)}%',
-                      style: const TextStyle(color: Colors.white70),
-                      textAlign: TextAlign.center,
-                    ),
+                    ],
                   ),
-                  IconButton(
-                    onPressed: () {
-                      setState(() {
-                        _isCancelled = true;
-                      });
-                      _showSnackBar('Upload cancelled by user', Colors.orange);
-                    },
-                    icon: Icon(Icons.cancel, color: Colors.red[300]),
-                    tooltip: 'Cancel upload',
-                  ),
-                ],
+                ),
               ),
-            ],
-            if (_error != null) ...[
               const SizedBox(height: 20),
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.red.withOpacity(0.2),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: Colors.red.withOpacity(0.4)),
-                ),
-                child: Row(
-                  children: [
-                    Icon(Icons.error, color: Colors.red[300]),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        _error!,
-                        style: TextStyle(color: Colors.red[300]),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-            if (_generatedLinks.isNotEmpty) ...[
-              const SizedBox(height: 24),
-              const Text('Shareable links',
+              const Text('Chunk size',
                   style: TextStyle(
                       color: Colors.white,
                       fontSize: 16,
@@ -1067,70 +970,183 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
               const SizedBox(height: 8),
               Container(
                 decoration: BoxDecoration(
-                  color: AppColors.darkSurface.withOpacity(0.6),
+                  color: AppColors.darkSurface.withOpacity(0.8),
                   borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: AppColors.primaryLight.withOpacity(0.3)),
+                  border:
+                      Border.all(color: AppColors.primaryLight.withOpacity(0.3)),
                 ),
-                child: ListView.builder(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(), // Prevent conflicts with parent scroll
-                  itemCount: _generatedLinks.length,
-                  itemBuilder: (context, index) {
-                    final linkInfo = _generatedLinks[index];
-                    final fileName = linkInfo['fileName'] ?? '';
-                    final link = linkInfo['link'] ?? '';
-                    return Padding(
-                      padding: const EdgeInsets.all(8.0),
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: AppColors.darkBackground.withOpacity(0.6),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: AppColors.primaryLight.withOpacity(0.2)),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Padding(
-                              padding: const EdgeInsets.all(8.0),
-                              child: Text(
-                                fileName,
-                                style: const TextStyle(
-                                  color: AppColors.primaryLight,
-                                  fontWeight: FontWeight.w500,
-                                  fontSize: 14,
-                                ),
-                              ),
-                            ),
-                            Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
-                              child: Row(
-                                children: [
-                                  Expanded(
-                                    child: SelectableText(
-                                      link,
-                                      style: const TextStyle(color: Colors.white, fontSize: 12),
-                                    ),
-                                  ),
-                                  IconButton(
-                                    tooltip: 'Copy link',
-                                    onPressed: () {
-                                      Clipboard.setData(ClipboardData(text: link));
-                                      _showSnackBar('Link copied to clipboard', Colors.green);
-                                    },
-                                    icon: Icon(Icons.copy, color: AppColors.primaryLight, size: 16),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
-                  },
+                child: DropdownButtonFormField<int>(
+                  value: _chunkSizeMB,
+                  dropdownColor: AppColors.darkSurface,
+                  style: const TextStyle(color: AppColors.darkSurface),
+                  items: const [1, 2, 4, 8, 16, 32]
+                      .map((e) => DropdownMenuItem(
+                          value: e,
+                          child: Text('$e MB',
+                              style: TextStyle(color: Colors.white))))
+                      .toList(),
+                  onChanged: (v) =>
+                      setState(() => _chunkSizeMB = v ?? _chunkSizeMB),
+                  decoration: InputDecoration(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+                    border: InputBorder.none,
+                    fillColor: AppColors.darkBackground,
+                  ),
                 ),
               ),
+              const SizedBox(height: 24),
+              SizedBox(
+                width: double.infinity,
+                child: _buildNeonButton(
+                  onPressed:
+                      _bulkUploadItems.isEmpty || upload.uploading || _isProcessingBundle
+                          ? null
+                          : _upload,
+                  icon: Icons.cloud_upload_outlined,
+                  label: _isUploadInProgress 
+                      ? 'Uploading... (${_bulkUploadItems.length} files)' 
+                      : 'Execute upload',
+                ),
+              ),
+              if (upload.uploading) ...[
+                const SizedBox(height: 20),
+                LinearProgressIndicator(
+                  year2023: false,
+                  value: upload.progress?.progressPercentage != null
+                      ? upload.progress!.progressPercentage / 100.0
+                      : null,
+                  backgroundColor: AppColors.darkSurface,
+                  color: AppColors.primaryLight,
+                  minHeight: 6,
+                  borderRadius: BorderRadius.circular(3),
+                  valueColor: AlwaysStoppedAnimation<Color>(
+                    Theme.of(context).colorScheme.primary, // M3 primary color
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        upload.progress == null
+                            ? 'Starting…'
+                            : '${upload.progress!.fileName} — ${upload.progress!.progressPercentage.toStringAsFixed(0)}%',
+                        style: const TextStyle(color: Colors.white70),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () {
+                        setState(() {
+                          _isCancelled = true;
+                        });
+                        _showSnackBar('Upload cancelled by user', Colors.orange);
+                      },
+                      icon: Icon(Icons.cancel, color: Colors.red[300]),
+                      tooltip: 'Cancel upload',
+                    ),
+                  ],
+                ),
+              ],
+              if (_error != null) ...[
+                const SizedBox(height: 20),
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.red.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: Colors.red.withOpacity(0.4)),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.error, color: Colors.red[300]),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          _error!,
+                          style: TextStyle(color: Colors.red[300]),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+              if (_generatedLinks.isNotEmpty) ...[
+                const SizedBox(height: 24),
+                const Text('Shareable links',
+                    style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500)),
+                const SizedBox(height: 8),
+                Container(
+                  decoration: BoxDecoration(
+                    color: AppColors.darkSurface.withOpacity(0.6),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: AppColors.primaryLight.withOpacity(0.3)),
+                  ),
+                  child: ListView.builder(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(), // Prevent conflicts with parent scroll
+                    itemCount: _generatedLinks.length,
+                    itemBuilder: (context, index) {
+                      final linkInfo = _generatedLinks[index];
+                      final fileName = linkInfo['fileName'] ?? '';
+                      final link = linkInfo['link'] ?? '';
+                      return Padding(
+                        padding: const EdgeInsets.all(8.0),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: AppColors.darkBackground.withOpacity(0.6),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: AppColors.primaryLight.withOpacity(0.2)),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Padding(
+                                padding: const EdgeInsets.all(8.0),
+                                child: Text(
+                                  fileName,
+                                  style: const TextStyle(
+                                    color: AppColors.primaryLight,
+                                    fontWeight: FontWeight.w500,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                              ),
+                              Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
+                                child: Row(
+                                  children: [
+                                    Expanded(
+                                      child: SelectableText(
+                                        link,
+                                        style: const TextStyle(color: Colors.white, fontSize: 12),
+                                      ),
+                                    ),
+                                    IconButton(
+                                      tooltip: 'Copy link',
+                                      onPressed: () {
+                                        Clipboard.setData(ClipboardData(text: link));
+                                        _showSnackBar('Link copied to clipboard', Colors.green);
+                                      },
+                                      icon: Icon(Icons.copy, color: AppColors.primaryLight, size: 16),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );
