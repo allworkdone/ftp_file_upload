@@ -16,18 +16,34 @@ import '../../../../core/di/injection.dart';
 import 'folder_picker_dialog.dart';
 import '../../../../app/theme/app_colors.dart'; // Import your purple theme
 
+// Data class for managing bulk upload items
+class BulkUploadItem {
+  final PlatformFile file;
+  String customName;
+  bool isSelected;
+
+  BulkUploadItem(this.file, {String? customName, this.isSelected = true})
+      : customName = customName ?? file.name;
+}
+
 class FileUploadWidget extends ConsumerStatefulWidget {
   final String folderPath;
   final ValueChanged<String>? onFolderChanged;
-  const FileUploadWidget(
-      {super.key, required this.folderPath, this.onFolderChanged});
+  final List<XFile>? droppedFiles;
+  
+  const FileUploadWidget({
+    super.key, 
+    required this.folderPath, 
+    this.onFolderChanged,
+    this.droppedFiles,
+  });
 
   @override
   ConsumerState<FileUploadWidget> createState() => _FileUploadWidgetState();
 }
 
 class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
-  PlatformFile? _picked;
+  List<BulkUploadItem> _bulkUploadItems = [];
   late final TextEditingController _folderCtrl;
   final TextEditingController _fileNameCtrl = TextEditingController();
   String? _link, _error;
@@ -38,6 +54,9 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
   int _chunkSizeMB = 4;
   final FocusNode _folderFocus = FocusNode();
   final FocusNode _fileNameFocus = FocusNode();
+  bool _isBulkUpload = false;
+  bool _isUploadInProgress = false;
+ bool _isCancelled = false;
 
   @override
   void initState() {
@@ -45,7 +64,12 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
     _folderCtrl = TextEditingController(
         text: widget.folderPath.isEmpty ? '/' : widget.folderPath);
     _loadFolders(_folderCtrl.text);
-  }
+    
+    // Process dropped files if any were passed
+    if (widget.droppedFiles != null && widget.droppedFiles!.isNotEmpty) {
+      _handleDroppedFiles(widget.droppedFiles!);
+    }
+ }
 
   @override
   void didUpdateWidget(covariant FileUploadWidget oldWidget) {
@@ -98,7 +122,7 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
     if (_folderCtrl.text.isNotEmpty) add(_folderCtrl.text);
     for (final f in _folders) add(f.fullPath);
     return items;
-  }
+ }
 
   String? _currentFolderValue(List<DropdownMenuItem<String>> items) {
     final v = _folderCtrl.text.trim();
@@ -164,65 +188,78 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
     } finally {
       setState(() => _isProcessingBundle = false);
     }
-  }
+ }
 
   Future<void> _pickFile() async {
     try {
       setState(() => _error = null);
       final result = await FilePicker.platform.pickFiles(
-          allowMultiple: false,
+          allowMultiple: true,  // Allow multiple files for bulk upload
           type: FileType.any,
           withData: Platform.isMacOS,
           lockParentWindow: Platform.isMacOS);
 
       if (result?.files.isNotEmpty == true) {
-        _picked = result!.files.single;
-        _fileNameCtrl.text = _picked!.name;
-        _showSnackBar('File selected: ${_picked!.name}', Colors.green);
-        setState(() {});
+        for (PlatformFile file in result!.files) {
+          _bulkUploadItems.add(BulkUploadItem(file));
+        }
+        _showSnackBar('${result.files.length} file(s) selected', Colors.green);
+        setState(() {
+          _isBulkUpload = true;
+        });
       }
     } catch (e) {
       _showError('Failed to select file: $e');
     }
   }
 
-  Future<void> _pickDirectory() async {
+ Future<void> _pickDirectory() async {
     try {
       setState(() => _error = null);
       final directoryPath = await FilePicker.platform.getDirectoryPath();
       if (directoryPath != null) {
-        _picked = await _createZipFromDirectory(directoryPath);
-        _fileNameCtrl.text = _picked!.name;
+        final zipFile = await _createZipFromDirectory(directoryPath);
+        _bulkUploadItems.add(BulkUploadItem(zipFile));
         _showSnackBar(
-            'Directory converted to zip: ${_picked!.name}', Colors.green);
-        setState(() {});
+            'Directory converted to zip: ${zipFile.name}', Colors.green);
+        setState(() {
+          _isBulkUpload = true;
+        });
       }
     } catch (e) {
       _showError('Failed to select directory: $e');
     }
   }
 
+  // Public method to handle dropped files from parent widget
+  void handleDroppedFiles(List<XFile> files) {
+    _handleDroppedFiles(files);
+  }
+  
   void _handleDroppedFiles(List<XFile> files) async {
     setState(() => _isDragging = false);
     if (files.isEmpty) return;
 
     try {
-      final xFile = files.first;
-      final stat = await FileStat.stat(xFile.path);
+      for (XFile xFile in files) {
+        final stat = await FileStat.stat(xFile.path);
 
-      if (stat.type == FileSystemEntityType.directory) {
-        _picked = await _createZipFromDirectory(xFile.path);
-        _showSnackBar(
-            'Directory converted to zip: ${_picked!.name}', Colors.green);
-      } else {
-        final fileSize = await File(xFile.path).length();
-        _picked =
-            PlatformFile(name: xFile.name, size: fileSize, path: xFile.path);
-        _showSnackBar('File added: ${_picked!.name}', Colors.green);
+        if (stat.type == FileSystemEntityType.directory) {
+          final zipFile = await _createZipFromDirectory(xFile.path);
+          _bulkUploadItems.add(BulkUploadItem(zipFile));
+          _showSnackBar(
+              'Directory converted to zip: ${zipFile.name}', Colors.green);
+        } else {
+          final fileSize = await File(xFile.path).length();
+          final platformFile = PlatformFile(
+              name: xFile.name, size: fileSize, path: xFile.path);
+          _bulkUploadItems.add(BulkUploadItem(platformFile));
+          _showSnackBar('File added: ${platformFile.name}', Colors.green);
+        }
       }
-
-      _fileNameCtrl.text = _picked!.name;
-      setState(() {});
+      setState(() {
+        _isBulkUpload = true;
+      });
     } catch (e) {
       _showError('Failed to process dropped file: $e');
     }
@@ -241,15 +278,114 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
     }
   }
 
-  void _removeSelectedFile() {
+   void _removeSelectedFile() {
     setState(() {
-      _picked = null;
+      _bulkUploadItems.clear();
       _fileNameCtrl.clear();
       _link = null;
       _error = null;
+      _isBulkUpload = false;
     });
-    _showSnackBar('Selected file removed', Colors.orange);
+    _showSnackBar('All selected files removed', Colors.orange);
   }
+
+  void _removeBulkItem(int index) {
+    setState(() {
+      _bulkUploadItems.removeAt(index);
+      if (_bulkUploadItems.isEmpty) {
+        _isBulkUpload = false;
+      }
+    });
+    _showSnackBar('File removed from selection', Colors.orange);
+  }
+
+  Future<void> _renameAllFiles() async {
+    if (_bulkUploadItems.isEmpty) return;
+
+    final controller = TextEditingController();
+    String pattern = '';
+
+    // Default pattern based on first file
+    if (_bulkUploadItems.isNotEmpty) {
+      final firstFile = _bulkUploadItems.first.file;
+      final extension = firstFile.extension?.isNotEmpty == true ? '.${firstFile.extension}' : '';
+      pattern = 'file_{{index}}$extension';
+    }
+
+    controller.text = pattern;
+
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.darkSurface.withOpacity(0.9),
+        surfaceTintColor: Colors.transparent,
+        title: const Text('Rename All Files', style: TextStyle(color: Colors.white)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: controller,
+              style: const TextStyle(color: Colors.white),
+              decoration: InputDecoration(
+                labelText: 'Rename pattern',
+                labelStyle: const TextStyle(color: Colors.white70),
+                hintText: 'Use {{index}} for numbering (e.g., my_file_{{index}}.ext)',
+                hintStyle: const TextStyle(color: Colors.white54),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: AppColors.primaryLight.withOpacity(0.3)),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: AppColors.primaryLight.withOpacity(0.3)),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: AppColors.primaryLight, width: 2),
+                ),
+                filled: true,
+                fillColor: AppColors.darkSurface.withOpacity(0.8),
+              ),
+            ),
+            const SizedBox(height: 10),
+            const Text(
+              'Examples:\n- "file_{{index}}" becomes file_1, file_2, etc.\n- "photo_{{index}}.jpg" becomes photo_1.jpg, photo_2.jpg, etc.',
+              style: TextStyle(color: Colors.white70, fontSize: 12),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel', style: TextStyle(color: Colors.white70)),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Apply'),
+          ),
+        ],
+      ),
+    );
+
+    if (result != null && result.isNotEmpty) {
+      setState(() {
+        for (int i = 0; i < _bulkUploadItems.length; i++) {
+          String newName = result.replaceAll('{{index}}', (i + 1).toString());
+          // Ensure the extension is preserved
+          final originalExtension = _bulkUploadItems[i].file.extension;
+          if (originalExtension != null && originalExtension.isNotEmpty && !newName.endsWith('.$originalExtension')) {
+            newName = '$newName.$originalExtension';
+          }
+          _bulkUploadItems[i].customName = newName;
+        }
+      });
+      _showSnackBar('All files renamed using pattern: $result', Colors.green);
+    }
+ }
 
   Future<void> _createFolder() async {
     final nameCtrl = TextEditingController();
@@ -310,59 +446,95 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
       _folderCtrl.text = newPath;
       _showSnackBar('Folder created: $newPath', Colors.green);
     }
-  }
+ }
 
   Future<void> _upload() async {
+    if (_bulkUploadItems.isEmpty) return;
+    
     setState(() {
       _link = null;
       _error = null;
+      _isUploadInProgress = true;
+      _isCancelled = false;
     });
-    final file = _picked;
-    if (file == null) return;
 
     final folder =
         _folderCtrl.text.trim().isEmpty ? '/' : _folderCtrl.text.trim();
-    final fileName = _fileNameCtrl.text.trim().isEmpty
-        ? file.name
-        : _fileNameCtrl.text.trim();
-    final remotePath =
-        ('${folder.endsWith('/') ? folder : '$folder/'}$fileName')
-            .replaceAll(RegExp(r"/+"), '/');
-
+    
     try {
-      String? uploadPath = file.path;
+      // Upload each selected file
+      for (var item in _bulkUploadItems) {
+        if (_isCancelled) break; // Check if user cancelled upload
+        
+        final file = item.file;
+        final fileName = item.customName;
+        final remotePath =
+            ('${folder.endsWith('/') ? folder : '$folder/'}$fileName')
+                .replaceAll(RegExp(r"/+"), '/');
 
-      if ((uploadPath == null || !await File(uploadPath).exists()) &&
-          file.bytes != null) {
-        final tempFile = File('${Directory.systemTemp.path}/${file.name}');
-        await tempFile.writeAsBytes(file.bytes!);
-        uploadPath = tempFile.path;
+        String? uploadPath = file.path;
+
+        if ((uploadPath == null || !await File(uploadPath).exists()) &&
+            file.bytes != null) {
+          final tempFile = File('${Directory.systemTemp.path}/${file.name}');
+          await tempFile.writeAsBytes(file.bytes!);
+          uploadPath = tempFile.path;
+        }
+
+        if (uploadPath == null || !await File(uploadPath).exists()) {
+          throw Exception('No valid file available for upload');
+        }
+
+        await ref
+            .read(uploadViewModelProvider.notifier)
+            .upload(uploadPath, remotePath);
+
+        final state = ref.read(uploadViewModelProvider);
+        if (state.error != null) {
+          setState(() => _error = state.error);
+          break; // Stop uploading if there's an error
+        }
       }
 
-      if (uploadPath == null || !await File(uploadPath).exists()) {
-        throw Exception('No valid file available for upload');
+      if (!_isCancelled) {
+        // Store the first file name and count before clearing the list
+        final firstFileName = _bulkUploadItems.isNotEmpty ? _bulkUploadItems.first.customName : '';
+        final fileCount = _bulkUploadItems.length;
+        
+        // Clear the selected files after upload completion
+        setState(() {
+          _bulkUploadItems.clear();
+          _isBulkUpload = false;
+          _isUploadInProgress = false;
+        });
+        
+        if (firstFileName.isNotEmpty) {
+          // Generate link for the first uploaded file only (for now)
+          final link = getIt<GenerateLinkUsecase>()
+              .fileUrl(folder.replaceFirst(RegExp('^/'), ''), firstFileName);
+          final generatedLink = await link;
+          setState(() => _link = generatedLink);
+          _showSnackBar('Upload completed for $fileCount file(s)', Colors.green);
+        } else {
+          _showSnackBar('Upload completed but no files were selected', Colors.orange);
+        }
+      } else {
+        // Clear the selected files after upload cancellation
+        setState(() {
+          _bulkUploadItems.clear();
+          _isBulkUpload = false;
+          _isUploadInProgress = false;
+        });
+        _showSnackBar('Upload cancelled by user', Colors.orange);
       }
-
-      await ref
-          .read(uploadViewModelProvider.notifier)
-          .upload(uploadPath, remotePath);
-
-      final state = ref.read(uploadViewModelProvider);
-      if (state.error != null) {
-        setState(() => _error = state.error);
-        return;
-      }
-
-      final link = getIt<GenerateLinkUsecase>()
-          .fileUrl(folder.replaceFirst(RegExp('^/'), ''), fileName);
-      final generatedLink = await link;
-      setState(() => _link = generatedLink);
-      _showSnackBar('Upload completed: $fileName', Colors.green);
     } catch (e) {
-      setState(() => _error = e.toString());
+      setState(() {
+        _isUploadInProgress = false;
+        _error = e.toString();
+      });
       _showError('Upload failed: $e');
     }
-  }
+ }
 
   Widget _buildDropArea() {
     return DropTarget(
@@ -416,9 +588,9 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
               Text(
                 _isDragging
                     ? 'Release to add file or directory'
-                    : (_picked == null
+                    : (_bulkUploadItems.isEmpty
                         ? 'Drag & drop files/directories here'
-                        : _picked!.name),
+                        : '${_bulkUploadItems.length} file(s) selected'),
                 style: TextStyle(
                   color: _isDragging ? AppColors.primaryLight : Colors.white70,
                   fontWeight: _isDragging ? FontWeight.w600 : FontWeight.normal,
@@ -498,7 +670,7 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
           center: Alignment.topRight,
           radius: 1.5,
           colors: [
-            Color(0xFF1A0033),
+            Color(0xFF1A003),
             AppColors.darkBackground,
           ],
           stops: [0.1, 0.9],
@@ -525,17 +697,91 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
             ),
             const SizedBox(height: 20),
             _buildDropArea(),
-            if (_picked != null) ...[
+            if (_isBulkUpload && _bulkUploadItems.isNotEmpty) ...[
               const SizedBox(height: 16),
-              Center(
-                child: TextButton.icon(
-                  onPressed: _removeSelectedFile,
-                  icon: const Icon(Icons.clear, size: 18, color: Colors.red),
-                  label: const Text('Remove selected file',
-                      style: TextStyle(color: Colors.red)),
-                  style: TextButton.styleFrom(
-                    foregroundColor: Colors.red,
-                    side: BorderSide(color: Colors.red.withOpacity(0.5)),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  TextButton.icon(
+                    onPressed: _removeSelectedFile,
+                    icon: const Icon(Icons.clear, size: 18, color: Colors.red),
+                    label: const Text('Remove all files',
+                        style: TextStyle(color: Colors.red)),
+                    style: TextButton.styleFrom(
+                      foregroundColor: Colors.red,
+                      side: BorderSide(color: Colors.red.withOpacity(0.5)),
+                    ),
+                  ),
+                  TextButton.icon(
+                    onPressed: _renameAllFiles,
+                    icon: const Icon(Icons.edit, size: 18, color: Colors.blue),
+                    label: const Text('Rename all files',
+                        style: TextStyle(color: Colors.blue)),
+                    style: TextButton.styleFrom(
+                      foregroundColor: Colors.blue,
+                      side: BorderSide(color: Colors.blue.withOpacity(0.5)),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              // Display bulk upload items with rename and remove functionality
+              Container(
+                decoration: BoxDecoration(
+                  color: AppColors.darkSurface.withOpacity(0.8),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppColors.primaryLight.withOpacity(0.3)),
+                ),
+                child: SizedBox(
+                  height: 200,
+                  child: ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: _bulkUploadItems.length,
+                    itemBuilder: (context, index) {
+                      final item = _bulkUploadItems[index];
+                      return Padding(
+                        padding: const EdgeInsets.all(8.0),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: TextFormField(
+                                initialValue: item.customName,
+                                onChanged: (value) {
+                                  setState(() {
+                                    _bulkUploadItems[index].customName = value;
+                                  });
+                                },
+                                style: const TextStyle(color: Colors.white),
+                                decoration: InputDecoration(
+                                  labelText: 'Rename file',
+                                  labelStyle: const TextStyle(color: Colors.white70),
+                                  filled: true,
+                                  fillColor: AppColors.darkBackground,
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                    borderSide: BorderSide(color: AppColors.primaryLight.withOpacity(0.3)),
+                                  ),
+                                  enabledBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                    borderSide: BorderSide(color: AppColors.primaryLight.withOpacity(0.3)),
+                                  ),
+                                  focusedBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                    borderSide: const BorderSide(color: AppColors.primaryLight, width: 2),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            IconButton(
+                              onPressed: () => _removeBulkItem(index),
+                              icon: Icon(Icons.close, color: Colors.red[300]),
+                              tooltip: 'Remove file',
+                            ),
+                          ],
+                        ),
+                      );
+                    },
                   ),
                 ),
               ),
@@ -712,11 +958,13 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
               width: double.infinity,
               child: _buildNeonButton(
                 onPressed:
-                    _picked == null || upload.uploading || _isProcessingBundle
+                    _bulkUploadItems.isEmpty || upload.uploading || _isProcessingBundle
                         ? null
                         : _upload,
                 icon: Icons.cloud_upload_outlined,
-                label: 'Execute upload',
+                label: _isUploadInProgress 
+                    ? 'Uploading... (${_bulkUploadItems.length} files)' 
+                    : 'Execute upload',
               ),
             ),
             if (upload.uploading) ...[
@@ -735,12 +983,29 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
                 ),
               ),
               const SizedBox(height: 12),
-              Text(
-                upload.progress == null
-                    ? 'Starting…'
-                    : '${upload.progress!.fileName} — ${upload.progress!.progressPercentage.toStringAsFixed(0)}%',
-                style: const TextStyle(color: Colors.white70),
-                textAlign: TextAlign.center,
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Text(
+                      upload.progress == null
+                          ? 'Starting…'
+                          : '${upload.progress!.fileName} — ${upload.progress!.progressPercentage.toStringAsFixed(0)}%',
+                      style: const TextStyle(color: Colors.white70),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () {
+                      setState(() {
+                        _isCancelled = true;
+                      });
+                      _showSnackBar('Upload cancelled by user', Colors.orange);
+                    },
+                    icon: Icon(Icons.cancel, color: Colors.red[300]),
+                    tooltip: 'Cancel upload',
+                  ),
+                ],
               ),
             ],
             if (_error != null) ...[

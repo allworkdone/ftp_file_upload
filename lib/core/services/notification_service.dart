@@ -29,10 +29,19 @@ class NotificationService {
       const DarwinInitializationSettings initializationSettingsIOS =
           DarwinInitializationSettings();
 
-      const InitializationSettings initializationSettings =
-          InitializationSettings(
+      DarwinInitializationSettings? initializationSettingsMacOS;
+      if (Platform.isMacOS) {
+        initializationSettingsMacOS = const DarwinInitializationSettings(
+          requestAlertPermission: true,
+          requestBadgePermission: true,
+          requestSoundPermission: true,
+        );
+      }
+
+      final initializationSettings = InitializationSettings(
         android: initializationSettingsAndroid,
         iOS: initializationSettingsIOS,
+        macOS: initializationSettingsMacOS,
       );
 
       await flutterLocalNotificationsPlugin.initialize(initializationSettings);

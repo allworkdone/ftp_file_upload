@@ -1,13 +1,15 @@
 import 'package:file_upload/app/theme/app_colors.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:desktop_drop/desktop_drop.dart';
+import 'package:cross_file/cross_file.dart';
 
 import '../widgets/file_upload_widget.dart';
 import '../widgets/folder_picker_dialog.dart';
 
 class UploadScreen extends ConsumerStatefulWidget {
   final String targetFolderPath;
-  const UploadScreen({super.key, required this.targetFolderPath});
+ const UploadScreen({super.key, required this.targetFolderPath});
 
   @override
   ConsumerState<UploadScreen> createState() => _UploadScreenState();
@@ -15,9 +17,10 @@ class UploadScreen extends ConsumerStatefulWidget {
 
 class _UploadScreenState extends ConsumerState<UploadScreen> {
   late String _folder;
+  List<XFile> _droppedFiles = [];
 
   @override
-  void initState() {
+ void initState() {
     super.initState();
     _folder = widget.targetFolderPath.isEmpty ? '/' : widget.targetFolderPath;
   }
@@ -54,26 +57,40 @@ class _UploadScreenState extends ConsumerState<UploadScreen> {
           ),
         ],
       ),
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: RadialGradient(
-            center: Alignment.topRight,
-            radius: 1.5,
-            colors: [
-              Color(0xFF1A0033),
-              AppColors.darkBackground,
-            ],
-            stops: [0.1, 0.9],
+      body: DropTarget(
+        onDragDone: (detail) {
+          // Handle dropped files on the entire screen
+          if (detail.files.isNotEmpty) {
+            // We need to pass these files to the FileUploadWidget
+            // Since we can't directly call methods on child widgets,
+            // we'll store them in state and pass them as props
+            setState(() {
+              _droppedFiles = detail.files;
+            });
+          }
+        },
+        child: Container(
+          decoration: BoxDecoration(
+            gradient: RadialGradient(
+              center: Alignment.topRight,
+              radius: 1.5,
+              colors: [
+                Color(0xFF1A0033),
+                AppColors.darkBackground,
+              ],
+              stops: [0.1, 0.9],
+            ),
           ),
-        ),
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 800),
-            child: Padding(
-              padding: const EdgeInsets.all(20),
-              child: FileUploadWidget(
-                folderPath: _folder,
-                onFolderChanged: (p) => setState(() => _folder = p),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 800),
+              child: Padding(
+                padding: const EdgeInsets.all(20),
+                child: FileUploadWidget(
+                  folderPath: _folder,
+                  onFolderChanged: (p) => setState(() => _folder = p),
+                  droppedFiles: _droppedFiles,
+                ),
               ),
             ),
           ),
