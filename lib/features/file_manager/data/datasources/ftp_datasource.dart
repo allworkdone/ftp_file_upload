@@ -211,13 +211,16 @@ class FTPDatasourceImpl implements FTPDatasource {
 
   @override
   Future<String> downloadFile(FTPCredentials credentials, String remoteFilePath,
-      String localDirectoryPath, {Function(double)? onProgress, Function? onCancel}) async {
+      String localDirectoryPath, {Function(double, double)? onProgress, Function? onCancel}) async {
     final ftpConnect = FTPConnect(
       credentials.hostname,
       user: credentials.username,
       pass: credentials.password,
       port: credentials.port,
     );
+
+    final stopwatch = Stopwatch()..start();
+    int lastBytes = 0;
 
     try {
       await ftpConnect.connect();
@@ -249,24 +252,40 @@ class FTPDatasourceImpl implements FTPDatasource {
         onProgress: onProgress != null ? (a, [b = 0, c = 0]) {
           try {
             double progress = 0.0;
+            int currentBytes = 0;
+
             if (a is int && b is int && b > 0) {
               progress = a.toDouble() / b.toDouble();
+              currentBytes = a;
             } else if (a is double && b is double && b > 0) {
               progress = a / b;
+              currentBytes = a.toInt();
             } else if (b is int && c > 0) {
               progress = b.toDouble() / c.toDouble();
+              currentBytes = b;
             } else if (a is int && c is int && c > 0) {
               progress = a.toDouble() / c.toDouble();
+              currentBytes = a;
             } else if (a is double && a >= 0.0 && a <= 1.0) {
               // If a is already a progress value between 0 and 1
               progress = a;
             }
             // Ensure progress is between 0 and 1
             progress = progress.clamp(0.0, 1.0);
-            onProgress(progress);
+
+            final elapsed = stopwatch.elapsedMilliseconds;
+            if (elapsed > 0) {
+              final bytesSinceLast = currentBytes - lastBytes;
+              final speed = (bytesSinceLast / elapsed) * 1000 / 1024; // KB/s
+              onProgress(progress, speed);
+              lastBytes = currentBytes;
+              stopwatch.reset();
+            } else {
+              onProgress(progress, 0.0);
+            }
           } catch (e) {
             // If there's an error calculating progress, just report 0
-            onProgress(0.0);
+            onProgress(0.0, 0.0);
           }
         } : null,
       );

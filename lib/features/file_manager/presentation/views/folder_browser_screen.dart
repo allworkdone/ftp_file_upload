@@ -45,6 +45,7 @@ class FolderBrowserScreen extends ConsumerStatefulWidget {
 class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
   // Track download progress for each file individually
   final Map<String, double> _downloadProgressMap = {};
+  final Map<String, double> _downloadSpeedMap = {};
   final Map<String, bool> _isDownloadingMap = {};
   final Map<String, String> _downloadingFileNameMap = {};
   final Map<String, VoidCallback?> _cancelDownloadMap = {};
@@ -266,7 +267,7 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
       final localFilePath = await getIt<FileManagerRepository>().downloadFile(
         file.fullPath,
         tempPath,
-        onProgress: (progress) {
+        onProgress: (progress, speed) {
           // Check if cancellation was requested
           if (cancelCompleter.isCompleted) {
             return; // Stop updating progress if cancelled
@@ -278,6 +279,7 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
           final intProgress = (progress * 100).toInt();
           setState(() {
             _downloadProgressMap[file.fullPath] = progress;
+            _downloadSpeedMap[file.fullPath] = speed;
           });
 
           // Update notification with progress
@@ -285,7 +287,7 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
             notificationService.updateDownloadProgressNotification(
               id: file.hashCode,
               title: 'Downloading ${file.name}',
-              description: '${intProgress}% complete',
+              description: '${intProgress}% complete (${speed.toStringAsFixed(2)} KB/s)',
               progress: intProgress,
             );
           } catch (e) {
@@ -1152,6 +1154,7 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
   Widget _buildFileTile(FTPFile file) {
     final isDownloading = _isDownloadingMap[file.fullPath] ?? false;
     final downloadProgress = _downloadProgressMap[file.fullPath] ?? 0.0;
+    final downloadSpeed = _downloadSpeedMap[file.fullPath] ?? 0.0;
     final downloadingFileName = _downloadingFileNameMap[file.fullPath] ?? '';
 
     return Container(
@@ -1189,7 +1192,7 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
                           ),
                           const SizedBox(width: 8),
                           Text(
-                            '${(downloadProgress * 100).toInt()}%',
+                            '${(downloadProgress * 100).toInt()}% (${downloadSpeed.toStringAsFixed(2)} KB/s)',
                             style: TextStyle(
                               color: AppColors.primary,
                               fontSize: 12,

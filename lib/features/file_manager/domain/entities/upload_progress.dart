@@ -14,6 +14,7 @@ class UploadProgress extends Equatable {
   final String? errorMessage;
   final DateTime startTime;
   final DateTime? endTime;
+  final double uploadSpeed;
 
   UploadProgress({
     required this.fileName,
@@ -25,6 +26,7 @@ class UploadProgress extends Equatable {
     this.errorMessage,
     required this.startTime,
     this.endTime,
+    this.uploadSpeed = 0.0,
   });
 
   UploadProgress copyWith({
@@ -37,6 +39,7 @@ class UploadProgress extends Equatable {
     String? errorMessage,
     DateTime? startTime,
     DateTime? endTime,
+    double? uploadSpeed,
   }) {
     return UploadProgress(
       fileName: fileName ?? this.fileName,
@@ -48,6 +51,7 @@ class UploadProgress extends Equatable {
       errorMessage: errorMessage ?? this.errorMessage,
       startTime: startTime ?? this.startTime,
       endTime: endTime ?? this.endTime,
+      uploadSpeed: uploadSpeed ?? this.uploadSpeed,
     );
   }
 
@@ -69,12 +73,6 @@ class UploadProgress extends Equatable {
     return null;
   }
 
-  // String get targetUrl {
-  //   final cleanFolderPath = targetFolderPath.isEmpty
-  //       ? ''
-  //       : '$targetFolderPath/';
-  //   return 'https://project.ibartstech.com/$cleanFolderPath$fileName';
-  // }
   final generateLinkUsecase = getIt<GenerateLinkUsecase>();
 
   Future<String> get url async =>
@@ -91,5 +89,6 @@ class UploadProgress extends Equatable {
         errorMessage,
         startTime,
         endTime,
+        uploadSpeed,
       ];
 }

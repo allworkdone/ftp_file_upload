@@ -67,8 +67,6 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
   final FocusNode _folderFocus = FocusNode();
   final FocusNode _fileNameFocus = FocusNode();
   bool _isBulkUpload = false;
-  bool _isUploadInProgress = false;
- bool _isCancelled = false;
 
   @override
   void initState() {
@@ -527,88 +525,65 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
 
   Future<void> _upload() async {
     if (_bulkUploadItems.isEmpty) return;
-    
+
     setState(() {
-      _generatedLinks.clear(); // Clear previous links
+      _generatedLinks.clear();
       _error = null;
-      _isUploadInProgress = true;
-      _isCancelled = false;
     });
 
     final folder =
         _folderCtrl.text.trim().isEmpty ? '/' : _folderCtrl.text.trim();
-    
-    try {
-      // Upload each selected file
-      for (var item in _bulkUploadItems) {
-        if (_isCancelled) break; // Check if user cancelled upload
-        
-        final file = item.file;
-        final fileName = item.customName;
-        final remotePath =
-            ('${folder.endsWith('/') ? folder : '$folder/'}$fileName')
-                .replaceAll(RegExp(r"/+"), '/');
 
-        String? uploadPath = file.path;
+    for (var item in _bulkUploadItems) {
+      final file = item.file;
+      final fileName = item.customName;
+      final remotePath =
+          ('${folder.endsWith('/') ? folder : '$folder/'}$fileName')
+              .replaceAll(RegExp(r"/+"), '/');
 
-        if ((uploadPath == null || !await File(uploadPath).exists()) &&
-            file.bytes != null) {
-          final tempFile = File('${Directory.systemTemp.path}/${file.name}');
-          await tempFile.writeAsBytes(file.bytes!);
-          uploadPath = tempFile.path;
-        }
+      String? uploadPath = file.path;
 
-        if (uploadPath == null || !await File(uploadPath).exists()) {
-          throw Exception('No valid file available for upload');
-        }
-
-        await ref
-            .read(uploadViewModelProvider.notifier)
-            .upload(uploadPath, remotePath);
-
-        final state = ref.read(uploadViewModelProvider);
-        if (state.error != null) {
-          setState(() => _error = state.error);
-          break; // Stop uploading if there's an error
-        }
-
-        // Generate link for this specific file after successful upload
-        final link = getIt<GenerateLinkUsecase>()
-            .fileUrl(folder.replaceFirst(RegExp('^/'), ''), fileName);
-        final generatedLink = await link;
-        _generatedLinks.add({'fileName': fileName, 'link': generatedLink});
+      if ((uploadPath == null || !await File(uploadPath).exists()) &&
+          file.bytes != null) {
+        final tempFile = File('${Directory.systemTemp.path}/${file.name}');
+        await tempFile.writeAsBytes(file.bytes!);
+        uploadPath = tempFile.path;
       }
 
-      if (!_isCancelled) {
-        final fileCount = _bulkUploadItems.length;
-        // Clear the selected files after upload completion
-        setState(() {
-          _bulkUploadItems.clear();
-          _isBulkUpload = false;
-          _isUploadInProgress = false;
-        });
-        
-        if (fileCount > 0) {
-          _showSnackBar('Upload completed for $fileCount file(s)', Colors.green);
-        } else {
-          _showSnackBar('Upload completed but no files were selected', Colors.orange);
-        }
-      } else {
-        // Clear the selected files after upload cancellation
-        setState(() {
-          _bulkUploadItems.clear();
-          _isBulkUpload = false;
-          _isUploadInProgress = false;
-        });
+      if (uploadPath == null || !await File(uploadPath).exists()) {
+        _showError('No valid file available for upload for ${file.name}');
+        continue;
+      }
+
+      await ref
+          .read(uploadViewModelProvider.notifier)
+          .upload(uploadPath, remotePath);
+
+      final state = ref.read(uploadViewModelProvider);
+      if (state.error != null) {
+        _showError('Upload failed: ${state.error}');
+        break;
+      }
+
+      if (state.progress?.isCancelled == true) {
         _showSnackBar('Upload cancelled by user', Colors.orange);
+        break;
       }
-    } catch (e) {
-      setState(() {
-        _isUploadInProgress = false;
-        _error = e.toString();
-      });
-      _showError('Upload failed: $e');
+
+      final link = getIt<GenerateLinkUsecase>()
+          .fileUrl(folder.replaceFirst(RegExp('^/'), ''), fileName);
+      final generatedLink = await link;
+      _generatedLinks.add({'fileName': fileName, 'link': generatedLink});
     }
+
+    if (!_isBulkUpload) {
+      _showSnackBar('Upload process finished.', Colors.green);
+    }
+
+    setState(() {
+      _bulkUploadItems.clear();
+      _isBulkUpload = false;
+    });
   }
 
   Widget _buildDropArea() {
@@ -1075,25 +1050,20 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
                           ? null
                           : _upload,
                   icon: Icons.cloud_upload_outlined,
-                  label: _isUploadInProgress 
-                      ? 'Uploading... (${_bulkUploadItems.length} files)' 
+                  label: upload.uploading
+                      ? 'Uploading... (${_bulkUploadItems.length} files)'
                       : 'Execute upload',
                 ),
               ),
               if (upload.uploading) ...[
                 const SizedBox(height: 20),
                 LinearProgressIndicator(
-                  year2023: false,
                   value: upload.progress?.progressPercentage != null
                       ? upload.progress!.progressPercentage / 100.0
                       : null,
                   backgroundColor: AppColors.darkSurface,
                   color: AppColors.primaryLight,
                   minHeight: 6,
-                  borderRadius: BorderRadius.circular(3),
-                  valueColor: AlwaysStoppedAnimation<Color>(
-                    Theme.of(context).colorScheme.primary, // M3 primary color
-                  ),
                 ),
                 const SizedBox(height: 12),
                 Row(
@@ -1103,16 +1073,15 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
                       child: Text(
                         upload.progress == null
                             ? 'Starting…'
-                            : '${upload.progress!.fileName} — ${upload.progress!.progressPercentage.toStringAsFixed(0)}%',
+                            : '${upload.progress!.fileName} — ${upload.progress!.progressPercentage.toStringAsFixed(0)}%'
+                              ' (${upload.uploadSpeed?.toStringAsFixed(2)} KB/s)',
                         style: const TextStyle(color: Colors.white70),
                         textAlign: TextAlign.center,
                       ),
                     ),
                     IconButton(
                       onPressed: () {
-                        setState(() {
-                          _isCancelled = true;
-                        });
+                        ref.read(uploadViewModelProvider.notifier).cancelUpload();
                         _showSnackBar('Upload cancelled by user', Colors.orange);
                       },
                       icon: Icon(Icons.cancel, color: Colors.red[300]),

@@ -9,7 +9,7 @@ abstract class FileManagerRepository {
   Stream<UploadProgress> uploadFile(String localPath, String remotePath);
   Future<void> deleteFile(String remoteFilePath);
   Future<void> deleteFolder(String remoteFolderPath);
-  Future<String> downloadFile(String remoteFilePath, String localDirectoryPath, {Function(double)? onProgress, Function? onCancel});
+  Future<String> downloadFile(String remoteFilePath, String localDirectoryPath, {Function(double, double)? onProgress, Function? onCancel});
   Future<void> renameFile(String oldPath, String newPath);
   Future<void> renameFolder(String oldPath, String newPath);
 }
