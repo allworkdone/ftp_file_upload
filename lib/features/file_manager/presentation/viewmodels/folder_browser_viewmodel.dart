@@ -5,12 +5,13 @@ import '../../domain/entities/ftp_file.dart';
 import '../../domain/usecases/get_folders_usecase.dart';
 import '../../domain/usecases/get_files_usecase.dart';
 import '../../../../core/di/injection.dart';
+import '../../../../core/services/cache_service.dart';
 
 class FolderBrowserState {
   final List<FTPFolder> folders;
   final List<FTPFile> files;
   final List<FTPFolder> allFolders; // Store all folders for search
-  final List<FTPFile> allFiles; // Store all files for search
+ final List<FTPFile> allFiles; // Store all files for search
   final bool loading;
   final String? error;
   final String? searchQuery;
@@ -53,21 +54,46 @@ enum FolderSortOption { name, nameReverse }
 class FolderBrowserViewModel extends StateNotifier<FolderBrowserState> {
   final GetFoldersUsecase _getFolders;
   final GetFilesUsecase _getFiles;
+  final FolderCacheService _cacheService;
 
-  FolderBrowserViewModel()
+ FolderBrowserViewModel()
       : _getFolders = getIt<GetFoldersUsecase>(),
         _getFiles = getIt<GetFilesUsecase>(),
+        _cacheService = getIt<FolderCacheService>(),
         super(const FolderBrowserState());
 
   Future<void> load(String folderPath) async {
     state = state.copyWith(loading: true, error: null, searchQuery: null);
+    
     try {
+      // Check if we have valid cached data
+      if (_cacheService.hasValidCache(folderPath)) {
+        final cachedData = _cacheService.getCachedFolderContents(folderPath);
+        if (cachedData != null) {
+          final folders = _deserializeFolders(cachedData['folders'] as List<dynamic>);
+          final files = _deserializeFiles(cachedData['files'] as List<dynamic>);
+          
+          state = state.copyWith(
+            allFolders: folders,
+            allFiles: files,
+            loading: false,
+            error: null,
+          );
+          _applySearchAndSort();
+          return;
+        }
+      }
+      
+      // If no valid cache, fetch from API
       final results = await Future.wait([
         _getFolders(folderPath),
         _getFiles(folderPath),
       ]);
       final folders = results[0] as List<FTPFolder>;
       final files = results[1] as List<FTPFile>;
+      
+      // Cache the results
+      await _cacheService.cacheFolderContents(folderPath, folders, files);
       
       state = state.copyWith(
         allFolders: folders,
@@ -79,6 +105,33 @@ class FolderBrowserViewModel extends StateNotifier<FolderBrowserState> {
     } catch (e) {
       state = state.copyWith(loading: false, error: e.toString());
     }
+  }
+
+  List<FTPFolder> _deserializeFolders(List<dynamic> folderData) {
+    return folderData.map((data) {
+      return FTPFolder(
+        name: data['name'] as String,
+        path: data['path'] as String,
+        createdDate: data['createdDate'] != null 
+            ? DateTime.fromMillisecondsSinceEpoch(data['createdDate'] as int) 
+            : null,
+      );
+    }).toList();
+  }
+
+  List<FTPFile> _deserializeFiles(List<dynamic> fileData) {
+    return fileData.map((data) {
+      return FTPFile(
+        name: data['name'] as String,
+        path: data['path'] as String,
+        type: FTPFileType.values[data['type'] as int],
+        size: data['size'] as int,
+        modifiedDate: data['modifiedDate'] != null 
+            ? DateTime.fromMillisecondsSinceEpoch(data['modifiedDate'] as int) 
+            : null,
+        extension: data['extension'] as String?,
+      );
+    }).toList();
   }
 
   void setSearchQuery(String query) {

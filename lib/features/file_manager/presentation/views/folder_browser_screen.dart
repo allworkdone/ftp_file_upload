@@ -6,9 +6,7 @@ import 'package:file_saver/file_saver.dart';
 import 'package:file_upload/core/services/notification_service.dart';
 import 'package:file_upload/core/utils/app_logger.dart';
 import 'package:file_upload/core/utils/permission_utils.dart';
-import 'package:file_upload/features/authentication/domain/entities/ftp_credentials.dart';
 import 'package:file_upload/features/authentication/presentation/viewmodels/auth_viewmodel.dart';
-import 'package:file_upload/features/file_manager/data/datasources/ftp_datasource.dart';
 import 'package:file_upload/features/file_manager/domain/usecases/generate_link_usecase.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -16,7 +14,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
-import 'package:permission_handler/permission_handler.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../app/router/route_names.dart';
@@ -26,8 +23,6 @@ import '../../../file_manager/domain/entities/ftp_file.dart';
 import '../../../file_manager/domain/entities/ftp_folder.dart';
 import '../../../file_manager/domain/usecases/delete_file_usecase.dart';
 import '../../../file_manager/domain/usecases/delete_folder_usecase.dart';
-import '../../../file_manager/domain/usecases/get_files_usecase.dart';
-import '../../../file_manager/domain/usecases/get_folders_usecase.dart';
 import '../../../file_manager/domain/usecases/rename_file_usecase.dart';
 import '../../../file_manager/domain/usecases/rename_folder_usecase.dart';
 import '../../../file_manager/domain/repositories/file_manager_repository.dart';
@@ -56,6 +51,17 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
       ref.read(folderBrowserViewModelProvider.notifier).load(widget.folderPath);
     });
   }
+
+  @override
+  void didUpdateWidget(FolderBrowserScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Reload data when the folder path changes
+    if (oldWidget.folderPath != widget.folderPath) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        ref.read(folderBrowserViewModelProvider.notifier).load(widget.folderPath);
+      });
+    }
+ }
 
   Future<void> _deleteItem(String path, String name, bool isFolder) async {
     final confirmed = await _showDeleteDialog(name, isFolder);
@@ -1267,188 +1273,256 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
     final state = ref.watch(folderBrowserViewModelProvider);
     final viewModel = ref.read(folderBrowserViewModelProvider.notifier);
 
-    return Scaffold(
-      backgroundColor: AppColors.darkBackground,
-      appBar: AppBar(
-        title: Text(widget.folderPath,
-            style: const TextStyle(color: Colors.white)),
-        backgroundColor: AppColors.darkSurface,
-        foregroundColor: Colors.white,
-        iconTheme: IconThemeData(color: AppColors.primaryLight),
-        elevation: 0,
-      ),
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: RadialGradient(
-            center: Alignment.topRight,
-            radius: 1.5,
-            colors: [
-              Color(0xFF1A0033),
-              AppColors.darkBackground,
-            ],
-            stops: [0.1, 0.9],
+    return WillPopScope(
+      onWillPop: () async {
+        // Calculate the parent path
+        String? parentPath;
+        if (widget.folderPath != '/') {
+          List<String> pathParts = widget.folderPath.split('/');
+          if (pathParts.length > 1) {
+            pathParts.removeLast(); // Remove current folder
+            if (pathParts.length == 1 && pathParts[0].isEmpty) {
+              parentPath = '/'; // Go back to root folder
+            } else {
+              parentPath = pathParts.join('/');
+              if (parentPath.isEmpty) parentPath = '/';
+            }
+          } else {
+            // If we're at a direct child of root (e.g., /folder1/), go to file manager screen
+            parentPath = null; // This will cause navigation to file manager
+          }
+        } else {
+          // If we're already at the root folder, go to file manager screen
+          parentPath = null;
+        }
+        
+        // Navigate to parent folder or back to file manager
+        if (parentPath != null && parentPath != widget.folderPath) {
+          context.go(RouteNames.folderBrowserPath(parentPath));
+          return false; // Prevent default pop behavior
+        } else if (parentPath == null) {
+          // Navigate back to the file manager screen (root screen with settings/logout)
+          context.go(RouteNames.fileManager);
+          return false; // Prevent default pop behavior
+        }
+        
+        return true; // Allow normal pop if at root
+      },
+      child: Scaffold(
+        backgroundColor: AppColors.darkBackground,
+        appBar: AppBar(
+          title: Text(widget.folderPath,
+              style: const TextStyle(color: Colors.white)),
+          backgroundColor: AppColors.darkSurface,
+          foregroundColor: Colors.white,
+          iconTheme: IconThemeData(color: AppColors.primaryLight),
+          elevation: 0,
+          leading: IconButton(
+            icon: Icon(Icons.arrow_back, color: AppColors.primaryLight),
+            onPressed: () {
+              // Calculate the parent path
+              String? parentPath;
+              if (widget.folderPath != '/') {
+                List<String> pathParts = widget.folderPath.split('/');
+                if (pathParts.length > 1) {
+                  pathParts.removeLast(); // Remove current folder
+                  if (pathParts.length == 1 && pathParts[0].isEmpty) {
+                    parentPath = '/'; // Go back to root folder
+                  } else {
+                    parentPath = pathParts.join('/');
+                    if (parentPath.isEmpty) parentPath = '/';
+                  }
+                } else {
+                  // If we're at a direct child of root (e.g., /folder1/), go to file manager screen
+                  parentPath = null; // This will cause navigation to file manager
+                }
+              } else {
+                // If we're already at the root folder, go to file manager screen
+                parentPath = null;
+              }
+              
+              // Navigate to parent folder or back to file manager
+              if (parentPath != null) {
+                context.go(RouteNames.folderBrowserPath(parentPath));
+              } else {
+                context.go(RouteNames.fileManager);
+              }
+            },
           ),
         ),
-        child: Column(
-          children: [
-            // Search and sort controls
-            Container(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                children: [
-                  // Search field
-                  Expanded(
-                    child: Container(
+        body: Container(
+          decoration: const BoxDecoration(
+            gradient: RadialGradient(
+              center: Alignment.topRight,
+              radius: 1.5,
+              colors: [
+                Color(0xFF1A0033),
+                AppColors.darkBackground,
+              ],
+              stops: [0.1, 0.9],
+            ),
+          ),
+          child: Column(
+            children: [
+              // Search and sort controls
+              Container(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    // Search field
+                    Expanded(
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: AppColors.darkSurface.withOpacity(0.6),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                              color: AppColors.primaryLight.withOpacity(0.3)),
+                        ),
+                        child: TextField(
+                          decoration: InputDecoration(
+                            hintText: 'Search files and folders...',
+                            hintStyle: TextStyle(color: Colors.white54),
+                            prefixIcon:
+                                Icon(Icons.search, color: AppColors.primaryLight),
+                            suffixIcon: state.searchQuery != null &&
+                                    state.searchQuery!.isNotEmpty
+                                ? IconButton(
+                                    icon: Icon(Icons.clear,
+                                        color: Colors.grey[400]),
+                                    onPressed: () => viewModel.setSearchQuery(''),
+                                  )
+                                : null,
+                            border: InputBorder.none,
+                            contentPadding: EdgeInsets.symmetric(
+                                horizontal: 16, vertical: 12),
+                          ),
+                          style: TextStyle(color: Colors.white),
+                          onChanged: (value) => viewModel.setSearchQuery(value),
+                          autofocus: false, // Disable auto-focus
+                        ),
+                      ),
+                    ),
+                    SizedBox(width: 12),
+                    // Sort button
+                    Container(
                       decoration: BoxDecoration(
                         color: AppColors.darkSurface.withOpacity(0.6),
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(
                             color: AppColors.primaryLight.withOpacity(0.3)),
                       ),
-                      child: TextField(
-                        decoration: InputDecoration(
-                          hintText: 'Search files and folders...',
-                          hintStyle: TextStyle(color: Colors.white54),
-                          prefixIcon:
-                              Icon(Icons.search, color: AppColors.primaryLight),
-                          suffixIcon: state.searchQuery != null &&
-                                  state.searchQuery!.isNotEmpty
-                              ? IconButton(
-                                  icon: Icon(Icons.clear,
-                                      color: Colors.grey[400]),
-                                  onPressed: () => viewModel.setSearchQuery(''),
-                                )
-                              : null,
-                          border: InputBorder.none,
-                          contentPadding: EdgeInsets.symmetric(
-                              horizontal: 16, vertical: 12),
-                        ),
-                        style: TextStyle(color: Colors.white),
-                        onChanged: (value) => viewModel.setSearchQuery(value),
-                        autofocus: false, // Disable auto-focus
-                      ),
-                    ),
-                  ),
-                  SizedBox(width: 12),
-                  // Sort button
-                  Container(
-                    decoration: BoxDecoration(
-                      color: AppColors.darkSurface.withOpacity(0.6),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                          color: AppColors.primaryLight.withOpacity(0.3)),
-                    ),
-                    child: PopupMenuButton<FolderSortOption>(
-                      color: AppColors.darkSurface,
-                      icon: Icon(Icons.sort, color: AppColors.primaryLight),
-                      onSelected: (option) => viewModel.setSortOption(option),
-                      itemBuilder: (context) => [
-                        PopupMenuItem(
-                          value: FolderSortOption.name,
-                          child: Row(
-                            children: [
-                              Icon(Icons.text_fields,
-                                  color: AppColors.primaryLight),
-                              const SizedBox(width: 8),
-                              Text('Sort by Name',
-                                  style: TextStyle(color: Colors.white)),
-                            ],
-                          ),
-                        ),
-                        PopupMenuItem(
-                          value: FolderSortOption.nameReverse,
-                          child: Row(
-                            children: [
-                              Icon(Icons.text_fields,
-                                  color: AppColors.primaryLight),
-                              const SizedBox(width: 8),
-                              Text('Sort by Name (Z-A)',
-                                  style: TextStyle(color: Colors.white)),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            // Main content
-            Expanded(
-              child: state.loading
-                  ? Center(
-                      child: CircularProgressIndicator(
-                      year2023: false,
-                      color: AppColors.primaryLight,
-                      backgroundColor: AppColors.darkSurface,
-                    ))
-                  : RefreshIndicator(
-                      backgroundColor: AppColors.darkSurface,
-                      color: AppColors.primaryLight,
-                      onRefresh: () => ref
-                          .read(folderBrowserViewModelProvider.notifier)
-                          .load(widget.folderPath),
-                      child: ListView(
-                        children: [
-                          if (state.error != null)
-                            _buildErrorCard(state.error!),
-
-                          // Current path
-                          Padding(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 20, vertical: 12),
-                            child: Text(
-                              'Path: ${widget.folderPath}',
-                              style: const TextStyle(
-                                  color: Colors.white70, fontSize: 12),
+                      child: PopupMenuButton<FolderSortOption>(
+                        color: AppColors.darkSurface,
+                        icon: Icon(Icons.sort, color: AppColors.primaryLight),
+                        onSelected: (option) => viewModel.setSortOption(option),
+                        itemBuilder: (context) => [
+                          PopupMenuItem(
+                            value: FolderSortOption.name,
+                            child: Row(
+                              children: [
+                                Icon(Icons.text_fields,
+                                    color: AppColors.primaryLight),
+                                const SizedBox(width: 8),
+                                Text('Sort by Name',
+                                    style: TextStyle(color: Colors.white)),
+                              ],
                             ),
                           ),
-
-                          // Results count
-                          if (state.searchQuery != null &&
-                              state.searchQuery!.isNotEmpty)
-                            Padding(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 20, vertical: 8),
-                              child: Text(
-                                '${state.folders.length + state.files.length} result(s) found for "${state.searchQuery}"',
-                                style: const TextStyle(
-                                    color: Colors.white54, fontSize: 14),
-                              ),
+                          PopupMenuItem(
+                            value: FolderSortOption.nameReverse,
+                            child: Row(
+                              children: [
+                                Icon(Icons.text_fields,
+                                    color: AppColors.primaryLight),
+                                const SizedBox(width: 8),
+                                Text('Sort by Name (Z-A)',
+                                    style: TextStyle(color: Colors.white)),
+                              ],
                             ),
-
-                          if (state.folders.isNotEmpty)
-                            _buildSectionHeader('Folders'),
-                          ...state.folders.map(_buildFolderTile),
-                          if (state.files.isNotEmpty)
-                            _buildSectionHeader('Files'),
-                          ...state.files.map(_buildFileTile),
-                          if (state.folders.isEmpty &&
-                              state.files.isEmpty &&
-                              (state.searchQuery == null ||
-                                  state.searchQuery!.isEmpty))
-                            _buildEmptyState(),
-                          if (state.folders.isEmpty &&
-                              state.files.isEmpty &&
-                              state.searchQuery != null &&
-                              state.searchQuery!.isNotEmpty)
-                            _buildNoSearchResults(),
+                          ),
                         ],
                       ),
                     ),
-            ),
-          ],
+                  ],
+                ),
+              ),
+              // Main content
+              Expanded(
+                child: state.loading
+                    ? Center(
+                        child: CircularProgressIndicator(
+                        year2023: false,
+                        color: AppColors.primaryLight,
+                        backgroundColor: AppColors.darkSurface,
+                      ))
+                    : RefreshIndicator(
+                        backgroundColor: AppColors.darkSurface,
+                        color: AppColors.primaryLight,
+                        onRefresh: () => ref
+                            .read(folderBrowserViewModelProvider.notifier)
+                            .load(widget.folderPath),
+                        child: ListView(
+                          children: [
+                            if (state.error != null)
+                              _buildErrorCard(state.error!),
+
+                            // Current path
+                            Padding(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 20, vertical: 12),
+                              child: Text(
+                                'Path: ${widget.folderPath}',
+                                style: const TextStyle(
+                                    color: Colors.white70, fontSize: 12),
+                              ),
+                            ),
+
+                            // Results count
+                            if (state.searchQuery != null &&
+                                state.searchQuery!.isNotEmpty)
+                              Padding(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 20, vertical: 8),
+                                child: Text(
+                                  '${state.folders.length + state.files.length} result(s) found for "${state.searchQuery}"',
+                                  style: const TextStyle(
+                                      color: Colors.white54, fontSize: 14),
+                                ),
+                              ),
+
+                            if (state.folders.isNotEmpty)
+                              _buildSectionHeader('Folders'),
+                            ...state.folders.map(_buildFolderTile),
+                            if (state.files.isNotEmpty)
+                              _buildSectionHeader('Files'),
+                            ...state.files.map(_buildFileTile),
+                            if (state.folders.isEmpty &&
+                                state.files.isEmpty &&
+                                (state.searchQuery == null ||
+                                    state.searchQuery!.isEmpty))
+                              _buildEmptyState(),
+                            if (state.folders.isEmpty &&
+                                state.files.isEmpty &&
+                                state.searchQuery != null &&
+                                state.searchQuery!.isNotEmpty)
+                              _buildNoSearchResults(),
+                          ],
+                        ),
+                      ),
+              ),
+            ],
+          ),
+        ),
+        floatingActionButton: FloatingActionButton(
+          onPressed: () =>
+              context.go(RouteNames.uploadPath(folderPath: widget.folderPath)),
+          backgroundColor: AppColors.primary,
+          foregroundColor: Colors.white,
+          child: const Icon(Icons.upload, color: Colors.white),
         ),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () =>
-            context.go(RouteNames.uploadPath(folderPath: widget.folderPath)),
-        backgroundColor: AppColors.primary,
-        foregroundColor: Colors.white,
-        child: const Icon(Icons.upload, color: Colors.white),
-      ),
     );
-  }
+ }
 
   Widget _buildErrorCard(String error) {
     return Padding(

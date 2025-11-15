@@ -17,6 +17,7 @@ import '../../app/router/app_router.dart';
 import '../../shared/data/providers/hive_provider.dart';
 import '../../shared/data/providers/shared_preferences_provider.dart';
 import '../services/notification_service.dart';
+import '../services/cache_service.dart';
 
 // Feature imports
 import '../../features/authentication/data/datasources/auth_local_datasource.dart';
@@ -225,6 +226,11 @@ Future<void> configureDependencies() async {
   await notificationService.initialize();
   getIt.registerSingleton<NotificationService>(notificationService);
 
+  // Initialize and register folder cache service
+ final folderCacheService = FolderCacheService();
+  await folderCacheService.init();
+  getIt.registerSingleton<FolderCacheService>(folderCacheService);
+
   AppLogger.info('Dependency injection setup completed');
 }
 
@@ -236,6 +242,7 @@ Future<void> _initializeHiveBoxes() async {
   await Hive.openBox('credentials');
   await Hive.openBox('upload_history');
   await Hive.openBox('settings');
+  await Hive.openBox('folder_cache'); // Add folder cache box
 
   AppLogger.info('Hive boxes initialized');
 }
