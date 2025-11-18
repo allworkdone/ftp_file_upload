@@ -28,7 +28,10 @@ class UrlGenerator {
       return '$_baseUrl/$cleanFileName';
     }
 
-    return '$_baseUrl/$cleanFolderPath/$cleanFileName';
+    // Ensure folder path is properly encoded too
+    final encodedFolderPath =
+        cleanFolderPath.split('/').map((s) => Uri.encodeComponent(s)).join('/');
+    return '$_baseUrl/$encodedFolderPath/$cleanFileName';
   }
 
   /// Generate folder URL

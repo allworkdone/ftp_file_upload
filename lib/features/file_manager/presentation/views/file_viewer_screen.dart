@@ -1,10 +1,13 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:chewie/chewie.dart';
 import 'package:dio/dio.dart';
+import 'package:syncfusion_flutter_pdfviewer/pdfviewer.dart';
 import 'package:file_upload/core/di/injection.dart';
 import 'package:file_upload/features/file_manager/domain/usecases/generate_link_usecase.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/gestures.dart';
+import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
 
 import '../../../../app/theme/app_colors.dart';
@@ -30,6 +33,10 @@ class _FileViewerScreenState extends ConsumerState<FileViewerScreen> {
   String? _textContent;
   VideoPlayerController? _videoPlayerController;
   ChewieController? _chewieController;
+  final PdfViewerController _pdfViewerController = PdfViewerController();
+  final GlobalKey<SfPdfViewerState> _pdfViewerKey = GlobalKey();
+  int _currentPage = 1;
+  int _totalPages = 0;
 
   @override
   void initState() {
@@ -49,9 +56,11 @@ class _FileViewerScreenState extends ConsumerState<FileViewerScreen> {
       final generateLinkUsecase = getIt<GenerateLinkUsecase>();
       // filePath is the full path including filename
       // We need to extract the folder path
-      final folderPath = widget.filePath.substring(0, widget.filePath.lastIndexOf('/'));
-      final url = await generateLinkUsecase.fileUrl(folderPath, widget.fileName);
-      
+      final folderPath =
+          widget.filePath.substring(0, widget.filePath.lastIndexOf('/'));
+      final url =
+          await generateLinkUsecase.fileUrl(folderPath, widget.fileName);
+
       if (mounted) {
         setState(() {
           _fileUrl = url;
@@ -134,7 +143,23 @@ class _FileViewerScreenState extends ConsumerState<FileViewerScreen> {
 
   bool get _isTextFile {
     final ext = widget.fileName.split('.').last.toLowerCase();
-    return ['txt', 'json', 'xml', 'md', 'html', 'css', 'js', 'dart', 'yaml', 'log'].contains(ext);
+    return [
+      'txt',
+      'json',
+      'xml',
+      'md',
+      'html',
+      'css',
+      'js',
+      'dart',
+      'yaml',
+      'log'
+    ].contains(ext);
+  }
+
+  bool get _isPdfFile {
+    final ext = widget.fileName.split('.').last.toLowerCase();
+    return ext == 'pdf';
   }
 
   @override
@@ -177,7 +202,9 @@ class _FileViewerScreenState extends ConsumerState<FileViewerScreen> {
     }
 
     if (_fileUrl == null) {
-      return const Center(child: Text('Could not generate file URL', style: TextStyle(color: Colors.white)));
+      return const Center(
+          child: Text('Could not generate file URL',
+              style: TextStyle(color: Colors.white)));
     }
 
     if (_isImageFile) {
@@ -188,7 +215,8 @@ class _FileViewerScreenState extends ConsumerState<FileViewerScreen> {
             placeholder: (context, url) => Center(
               child: CircularProgressIndicator(color: AppColors.primaryLight),
             ),
-            errorWidget: (context, url, error) => const Icon(Icons.error, color: Colors.red),
+            errorWidget: (context, url, error) =>
+                const Icon(Icons.error, color: Colors.red),
             fit: BoxFit.contain,
           ),
         ),
@@ -196,7 +224,8 @@ class _FileViewerScreenState extends ConsumerState<FileViewerScreen> {
     }
 
     if (_isVideoFile) {
-      if (_chewieController != null && _videoPlayerController!.value.isInitialized) {
+      if (_chewieController != null &&
+          _videoPlayerController!.value.isInitialized) {
         return Center(
           child: Chewie(controller: _chewieController!),
         );
@@ -205,6 +234,96 @@ class _FileViewerScreenState extends ConsumerState<FileViewerScreen> {
           child: CircularProgressIndicator(color: AppColors.primaryLight),
         );
       }
+    }
+
+    if (_isPdfFile) {
+      return Stack(
+        children: [
+          Listener(
+            onPointerSignal: (event) {
+              if (event is PointerScrollEvent) {
+                final isCtrlPressed = HardwareKeyboard.instance
+                        .isLogicalKeyPressed(LogicalKeyboardKey.controlLeft) ||
+                    HardwareKeyboard.instance
+                        .isLogicalKeyPressed(LogicalKeyboardKey.controlRight);
+                if (isCtrlPressed) {
+                  final newZoomLevel = _pdfViewerController.zoomLevel +
+                      (event.scrollDelta.dy > 0 ? -0.1 : 0.1);
+                  _pdfViewerController.zoomLevel =
+                      newZoomLevel.clamp(1.0, 3.0); // Clamp zoom level
+                }
+              }
+            },
+            child: SfPdfViewer.network(
+              _fileUrl!,
+              controller: _pdfViewerController,
+              key: _pdfViewerKey,
+              enableDoubleTapZooming: true,
+              enableTextSelection: true,
+              canShowScrollHead: true,
+              canShowScrollStatus: true,
+              onDocumentLoaded: (PdfDocumentLoadedDetails details) {
+                setState(() {
+                  _totalPages = details.document.pages.count;
+                });
+              },
+              onPageChanged: (PdfPageChangedDetails details) {
+                setState(() {
+                  _currentPage = details.newPageNumber;
+                });
+              },
+              onDocumentLoadFailed: (PdfDocumentLoadFailedDetails details) {
+                setState(() {
+                  _error = 'Failed to load PDF: ${details.error}';
+                });
+              },
+            ),
+          ),
+          if (_totalPages > 0)
+            Positioned(
+              bottom: 20,
+              left: 0,
+              right: 0,
+              child: Center(
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.black54,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        icon:
+                            const Icon(Icons.chevron_left, color: Colors.white),
+                        onPressed: _currentPage > 1
+                            ? () {
+                                _pdfViewerController.previousPage();
+                              }
+                            : null,
+                      ),
+                      Text(
+                        'Page $_currentPage of $_totalPages',
+                        style: const TextStyle(color: Colors.white),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.chevron_right,
+                            color: Colors.white),
+                        onPressed: _currentPage < _totalPages
+                            ? () {
+                                _pdfViewerController.nextPage();
+                              }
+                            : null,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+        ],
+      );
     }
 
     if (_isTextFile) {

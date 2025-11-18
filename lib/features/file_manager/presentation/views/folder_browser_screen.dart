@@ -945,7 +945,9 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
         // Videos
         'mp4', 'mov', 'avi', 'mkv', 'webm',
         // Text
-        'txt', 'json', 'xml', 'md', 'html', 'css', 'js', 'dart', 'yaml', 'log'
+        'txt', 'json', 'xml', 'md', 'html', 'css', 'js', 'dart', 'yaml', 'log',
+        // Documents
+        'pdf'
       ];
 
       if (supportedExtensions.contains(ext)) {

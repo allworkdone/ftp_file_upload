@@ -562,8 +562,10 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
       'css',
       'js',
       'dart',
+      'dart',
       'yaml',
-      'log'
+      'log',
+      'pdf'
     ];
     return supportedExtensions.contains(ext);
   }

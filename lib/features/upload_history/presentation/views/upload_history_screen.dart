@@ -89,7 +89,8 @@ class _UploadHistoryScreenState extends ConsumerState<UploadHistoryScreen> {
                           'js',
                           'dart',
                           'yaml',
-                          'log'
+                          'log',
+                          'pdf'
                         ];
 
                         if (supportedExtensions.contains(ext)) {
