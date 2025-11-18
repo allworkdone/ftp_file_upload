@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import '../../../../app/router/route_names.dart';
 
 import '../../domain/entities/upload_record.dart';
 import '../../domain/usecases/get_upload_history_usecase.dart';
@@ -10,7 +12,8 @@ class UploadHistoryScreen extends ConsumerStatefulWidget {
   const UploadHistoryScreen({super.key});
 
   @override
-  ConsumerState<UploadHistoryScreen> createState() => _UploadHistoryScreenState();
+  ConsumerState<UploadHistoryScreen> createState() =>
+      _UploadHistoryScreenState();
 }
 
 class _UploadHistoryScreenState extends ConsumerState<UploadHistoryScreen> {
@@ -56,12 +59,55 @@ class _UploadHistoryScreenState extends ConsumerState<UploadHistoryScreen> {
                     final r = _items[i];
                     return ListTile(
                       title: Text(r.fileName),
-                      subtitle: Text('${r.formattedFileSize} • ${r.formattedDuration} • ${r.targetFolderPath}'),
-                      trailing: Icon(r.isSuccessful ? Icons.check_circle : Icons.error, color: r.isSuccessful ? Colors.green : Colors.red),
+                      subtitle: Text(
+                          '${r.formattedFileSize} • ${r.formattedDuration} • ${r.targetFolderPath}'),
+                      trailing: Icon(
+                          r.isSuccessful ? Icons.check_circle : Icons.error,
+                          color: r.isSuccessful ? Colors.green : Colors.red),
+                      onTap: () {
+                        if (!r.isSuccessful) return;
+
+                        final ext = r.fileName.split('.').last.toLowerCase();
+                        final supportedExtensions = [
+                          'jpg',
+                          'jpeg',
+                          'png',
+                          'gif',
+                          'webp',
+                          'bmp',
+                          'mp4',
+                          'mov',
+                          'avi',
+                          'mkv',
+                          'webm',
+                          'txt',
+                          'json',
+                          'xml',
+                          'md',
+                          'html',
+                          'css',
+                          'js',
+                          'dart',
+                          'yaml',
+                          'log'
+                        ];
+
+                        if (supportedExtensions.contains(ext)) {
+                          final fullPath =
+                              '${r.targetFolderPath.endsWith('/') ? r.targetFolderPath : r.targetFolderPath + '/'}${r.fileName}';
+                          context.push(
+                              RouteNames.fileViewerPath(fullPath, r.fileName));
+                        } else {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                                content: Text(
+                                    'File type not supported for in-app viewing')),
+                          );
+                        }
+                      },
                     );
                   },
                 ),
     );
   }
 }
-

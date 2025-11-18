@@ -17,6 +17,8 @@ import '../../presentation/viewmodels/upload_viewmodel.dart';
 import '../../../../core/di/injection.dart';
 import 'folder_picker_dialog.dart';
 import '../../../../app/theme/app_colors.dart'; // Import your purple theme
+import 'package:go_router/go_router.dart';
+import '../../../../app/router/route_names.dart';
 
 // Data structure for isolate communication
 class _ZipData {
@@ -40,10 +42,10 @@ class FileUploadWidget extends ConsumerStatefulWidget {
   final String folderPath;
   final ValueChanged<String>? onFolderChanged;
   final List<XFile>? droppedFiles;
-  
+
   const FileUploadWidget({
-    super.key, 
-    required this.folderPath, 
+    super.key,
+    required this.folderPath,
     this.onFolderChanged,
     this.droppedFiles,
   });
@@ -68,7 +70,7 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
   final FocusNode _fileNameFocus = FocusNode();
   bool _isBulkUpload = false;
   bool _isUploadInProgress = false;
- bool _isCancelled = false;
+  bool _isCancelled = false;
 
   @override
   void initState() {
@@ -76,12 +78,12 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
     _folderCtrl = TextEditingController(
         text: widget.folderPath.isEmpty ? '/' : widget.folderPath);
     _loadFolders(_folderCtrl.text);
-    
+
     // Process dropped files if any were passed
     if (widget.droppedFiles != null && widget.droppedFiles!.isNotEmpty) {
       _handleDroppedFiles(widget.droppedFiles!);
     }
- }
+  }
 
   @override
   void didUpdateWidget(covariant FileUploadWidget oldWidget) {
@@ -134,7 +136,7 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
     if (_folderCtrl.text.isNotEmpty) add(_folderCtrl.text);
     for (final f in _folders) add(f.fullPath);
     return items;
- }
+  }
 
   String? _currentFolderValue(List<DropdownMenuItem<String>> items) {
     final v = _folderCtrl.text.trim();
@@ -163,11 +165,11 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
   static void _createZipInIsolate(_ZipData data) {
     final directoryPath = data.directoryPath;
     final outputPath = data.outputPath;
-    
+
     try {
       print('Starting zip creation for directory: $directoryPath');
       print('Output path: $outputPath');
-      
+
       final dirName = directoryPath.split('/').last;
       final zipFile = File(outputPath);
       final archive = Archive();
@@ -178,12 +180,15 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
       directory.listSync(recursive: true).forEach((entity) {
         try {
           if (entity is File) {
-            final relativePath = entity.path.substring(directoryPath.length + 1);
+            final relativePath =
+                entity.path.substring(directoryPath.length + 1);
             print('Adding file: $relativePath');
             final fileBytes = entity.readAsBytesSync();
-            archive.addFile(ArchiveFile(relativePath, fileBytes.length, fileBytes));
+            archive.addFile(
+                ArchiveFile(relativePath, fileBytes.length, fileBytes));
           } else if (entity is Directory) {
-            final relativePath = entity.path.substring(directoryPath.length + 1) + '/';
+            final relativePath =
+                entity.path.substring(directoryPath.length + 1) + '/';
             print('Adding directory: $relativePath');
             archive.addFile(ArchiveFile(relativePath, 0, []));
           }
@@ -216,19 +221,20 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
       print('Starting zip creation for directory: $directoryPath');
       final dirName = directoryPath.split('/').last;
       // Use a simpler output path without special characters
-      final sanitizedDirName = dirName.replaceAll(RegExp(r'[<>:"/\\|?*\x00-\x1F]'), '_');
+      final sanitizedDirName =
+          dirName.replaceAll(RegExp(r'[<>:"/\\|?*\x00-\x1F]'), '_');
       final outputPath = '${Directory.systemTemp.path}/$sanitizedDirName.zip';
       print('Output path: $outputPath');
-      
+
       // Create zip data for isolate
       final zipData = _ZipData(directoryPath, outputPath);
-      
+
       // Create and run isolate with a simpler approach
       print('Creating isolate for zip creation');
       // Use compute instead of Isolate.run for better compatibility
       await compute(_createZipInIsolate, zipData);
       print('Isolate completed');
-      
+
       // Check if file was created successfully
       final zipFile = File(outputPath);
       print('Checking if zip file exists: ${await zipFile.exists()}');
@@ -236,9 +242,7 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
         final size = await zipFile.length();
         print('Zip file size: $size');
         return PlatformFile(
-            name: '$sanitizedDirName.zip',
-            size: size,
-            path: zipFile.path);
+            name: '$sanitizedDirName.zip', size: size, path: zipFile.path);
       } else {
         print('Zip file does not exist at: $outputPath');
         throw Exception('Failed to create zip archive');
@@ -256,7 +260,7 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
     try {
       setState(() => _error = null);
       final result = await FilePicker.platform.pickFiles(
-          allowMultiple: true,  // Allow multiple files for bulk upload
+          allowMultiple: true, // Allow multiple files for bulk upload
           type: FileType.any,
           withData: Platform.isMacOS,
           lockParentWindow: Platform.isMacOS);
@@ -275,7 +279,7 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
     }
   }
 
- Future<void> _pickDirectory() async {
+  Future<void> _pickDirectory() async {
     try {
       setState(() => _error = null);
       final directoryPath = await FilePicker.platform.getDirectoryPath();
@@ -297,7 +301,7 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
   void handleDroppedFiles(List<XFile> files) {
     _handleDroppedFiles(files);
   }
-  
+
   void _handleDroppedFiles(List<XFile> files) async {
     setState(() => _isDragging = false);
     if (files.isEmpty) return;
@@ -318,8 +322,8 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
         } else {
           print('Processing file: ${xFile.path}');
           final fileSize = await File(xFile.path).length();
-          final platformFile = PlatformFile(
-              name: xFile.name, size: fileSize, path: xFile.path);
+          final platformFile =
+              PlatformFile(name: xFile.name, size: fileSize, path: xFile.path);
           _bulkUploadItems.add(BulkUploadItem(platformFile));
           _showSnackBar('File added: ${platformFile.name}', Colors.green);
         }
@@ -343,7 +347,8 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
         content: Text(message),
         backgroundColor: color,
         duration: const Duration(seconds: 3),
-        behavior: SnackBarBehavior.floating, // Changed back to floating to allow margin
+        behavior: SnackBarBehavior
+            .floating, // Changed back to floating to allow margin
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(8),
         ),
@@ -352,7 +357,7 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
     }
   }
 
-   void _removeSelectedFile() {
+  void _removeSelectedFile() {
     setState(() {
       _bulkUploadItems.clear();
       _fileNameCtrl.clear();
@@ -382,7 +387,9 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
     // Default pattern based on first file
     if (_bulkUploadItems.isNotEmpty) {
       final firstFile = _bulkUploadItems.first.file;
-      final extension = firstFile.extension?.isNotEmpty == true ? '.${firstFile.extension}' : '';
+      final extension = firstFile.extension?.isNotEmpty == true
+          ? '.${firstFile.extension}'
+          : '';
       pattern = 'file_{{index}}$extension';
     }
 
@@ -393,7 +400,8 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.darkSurface.withOpacity(0.9),
         surfaceTintColor: Colors.transparent,
-        title: const Text('Rename All Files', style: TextStyle(color: Colors.white)),
+        title: const Text('Rename All Files',
+            style: TextStyle(color: Colors.white)),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -403,19 +411,23 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
               decoration: InputDecoration(
                 labelText: 'Rename pattern',
                 labelStyle: const TextStyle(color: Colors.white70),
-                hintText: 'Use {{index}} for numbering (e.g., my_file_{{index}}.ext)',
+                hintText:
+                    'Use {{index}} for numbering (e.g., my_file_{{index}}.ext)',
                 hintStyle: const TextStyle(color: Colors.white54),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(color: AppColors.primaryLight.withOpacity(0.3)),
+                  borderSide: BorderSide(
+                      color: AppColors.primaryLight.withOpacity(0.3)),
                 ),
                 enabledBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(color: AppColors.primaryLight.withOpacity(0.3)),
+                  borderSide: BorderSide(
+                      color: AppColors.primaryLight.withOpacity(0.3)),
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: AppColors.primaryLight, width: 2),
+                  borderSide:
+                      const BorderSide(color: AppColors.primaryLight, width: 2),
                 ),
                 filled: true,
                 fillColor: AppColors.darkSurface.withOpacity(0.8),
@@ -431,7 +443,8 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel', style: TextStyle(color: Colors.white70)),
+            child:
+                const Text('Cancel', style: TextStyle(color: Colors.white70)),
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, controller.text.trim()),
@@ -451,7 +464,9 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
           String newName = result.replaceAll('{{index}}', (i + 1).toString());
           // Ensure the extension is preserved
           final originalExtension = _bulkUploadItems[i].file.extension;
-          if (originalExtension != null && originalExtension.isNotEmpty && !newName.endsWith('.$originalExtension')) {
+          if (originalExtension != null &&
+              originalExtension.isNotEmpty &&
+              !newName.endsWith('.$originalExtension')) {
             newName = '$newName.$originalExtension';
           }
           _bulkUploadItems[i].customName = newName;
@@ -459,7 +474,7 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
       });
       _showSnackBar('All files renamed using pattern: $result', Colors.green);
     }
- }
+  }
 
   Future<void> _createFolder() async {
     final nameCtrl = TextEditingController();
@@ -520,14 +535,42 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
       _folderCtrl.text = newPath;
       _showSnackBar('Folder created: $newPath', Colors.green);
     }
- }
+  }
 
   // Store generated links for each file after upload
   List<Map<String, String>> _generatedLinks = [];
 
+  bool _isFileSupported(String fileName) {
+    final ext = fileName.split('.').last.toLowerCase();
+    final supportedExtensions = [
+      'jpg',
+      'jpeg',
+      'png',
+      'gif',
+      'webp',
+      'bmp',
+      'mp4',
+      'mov',
+      'avi',
+      'mkv',
+      'webm',
+      'txt',
+      'json',
+      'xml',
+      'md',
+      'html',
+      'css',
+      'js',
+      'dart',
+      'yaml',
+      'log'
+    ];
+    return supportedExtensions.contains(ext);
+  }
+
   Future<void> _upload() async {
     if (_bulkUploadItems.isEmpty) return;
-    
+
     setState(() {
       _generatedLinks.clear(); // Clear previous links
       _error = null;
@@ -537,12 +580,12 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
 
     final folder =
         _folderCtrl.text.trim().isEmpty ? '/' : _folderCtrl.text.trim();
-    
+
     try {
       // Upload each selected file
       for (var item in _bulkUploadItems) {
         if (_isCancelled) break; // Check if user cancelled upload
-        
+
         final file = item.file;
         final fileName = item.customName;
         final remotePath =
@@ -576,7 +619,8 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
         final link = getIt<GenerateLinkUsecase>()
             .fileUrl(folder.replaceFirst(RegExp('^/'), ''), fileName);
         final generatedLink = await link;
-        _generatedLinks.add({'fileName': fileName, 'link': generatedLink});
+        _generatedLinks.add(
+            {'fileName': fileName, 'link': generatedLink, 'path': remotePath});
       }
 
       if (!_isCancelled) {
@@ -587,11 +631,13 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
           _isBulkUpload = false;
           _isUploadInProgress = false;
         });
-        
+
         if (fileCount > 0) {
-          _showSnackBar('Upload completed for $fileCount file(s)', Colors.green);
+          _showSnackBar(
+              'Upload completed for $fileCount file(s)', Colors.green);
         } else {
-          _showSnackBar('Upload completed but no files were selected', Colors.orange);
+          _showSnackBar(
+              'Upload completed but no files were selected', Colors.orange);
         }
       } else {
         // Clear the selected files after upload cancellation
@@ -794,7 +840,8 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
                   children: [
                     TextButton.icon(
                       onPressed: _removeSelectedFile,
-                      icon: const Icon(Icons.clear, size: 18, color: Colors.red),
+                      icon:
+                          const Icon(Icons.clear, size: 18, color: Colors.red),
                       label: const Text('Remove all files',
                           style: TextStyle(color: Colors.red)),
                       style: TextButton.styleFrom(
@@ -810,7 +857,8 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
                   decoration: BoxDecoration(
                     color: AppColors.darkSurface.withOpacity(0.8),
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppColors.primaryLight.withOpacity(0.3)),
+                    border: Border.all(
+                        color: AppColors.primaryLight.withOpacity(0.3)),
                   ),
                   child: Column(
                     children: [
@@ -818,9 +866,11 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
                           color: AppColors.darkBackground.withOpacity(0.6),
-                          borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
+                          borderRadius:
+                              BorderRadius.vertical(top: Radius.circular(12)),
                           border: Border(
-                            bottom: BorderSide(color: AppColors.primaryLight.withOpacity(0.3)),
+                            bottom: BorderSide(
+                                color: AppColors.primaryLight.withOpacity(0.3)),
                           ),
                         ),
                         child: Row(
@@ -855,14 +905,23 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
                                       onChanged: (value) {
                                         setState(() {
                                           // Preserve the original file extension when renaming
-                                          final originalFile = _bulkUploadItems[index].file;
-                                          final originalExtension = originalFile.extension?.isNotEmpty == true ? '.${originalFile.extension}' : '';
-                                          
+                                          final originalFile =
+                                              _bulkUploadItems[index].file;
+                                          final originalExtension = originalFile
+                                                      .extension?.isNotEmpty ==
+                                                  true
+                                              ? '.${originalFile.extension}'
+                                              : '';
+
                                           // If the new name doesn't end with the original extension, add it back
-                                          if (originalExtension.isNotEmpty && !value.endsWith(originalExtension)) {
-                                            _bulkUploadItems[index].customName = '$value$originalExtension';
+                                          if (originalExtension.isNotEmpty &&
+                                              !value.endsWith(
+                                                  originalExtension)) {
+                                            _bulkUploadItems[index].customName =
+                                                '$value$originalExtension';
                                           } else {
-                                            _bulkUploadItems[index].customName = value;
+                                            _bulkUploadItems[index].customName =
+                                                value;
                                           }
                                         });
                                       },
@@ -871,32 +930,57 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
                                           return 'Filename cannot be empty';
                                         }
                                         // Check for invalid characters in filename
-                                        if (value.contains(RegExp(r'[<>:"/\\|?*]'))) {
+                                        if (value.contains(
+                                            RegExp(r'[<>:"/\\|?*]'))) {
                                           return 'Filename contains invalid characters';
                                         }
                                         return null;
                                       },
                                       style: TextStyle(
-                                        color: _editModeIndices.contains(index) ? Colors.white : Colors.white70,
+                                        color: _editModeIndices.contains(index)
+                                            ? Colors.white
+                                            : Colors.white70,
                                       ),
                                       decoration: InputDecoration(
                                         labelText: 'Rename file',
                                         labelStyle: TextStyle(
-                                          color: _editModeIndices.contains(index) ? Colors.white70 : Colors.white54,
+                                          color:
+                                              _editModeIndices.contains(index)
+                                                  ? Colors.white70
+                                                  : Colors.white54,
                                         ),
                                         filled: true,
-                                        fillColor: _editModeIndices.contains(index) ? AppColors.darkBackground : AppColors.darkBackground.withOpacity(0.5),
+                                        fillColor:
+                                            _editModeIndices.contains(index)
+                                                ? AppColors.darkBackground
+                                                : AppColors.darkBackground
+                                                    .withOpacity(0.5),
                                         border: OutlineInputBorder(
-                                          borderRadius: BorderRadius.circular(8),
-                                          borderSide: BorderSide(color: AppColors.primaryLight.withOpacity(0.3)),
+                                          borderRadius:
+                                              BorderRadius.circular(8),
+                                          borderSide: BorderSide(
+                                              color: AppColors.primaryLight
+                                                  .withOpacity(0.3)),
                                         ),
                                         enabledBorder: OutlineInputBorder(
-                                          borderRadius: BorderRadius.circular(8),
-                                          borderSide: BorderSide(color: AppColors.primaryLight.withOpacity(_editModeIndices.contains(index) ? 0.3 : 0.1)),
+                                          borderRadius:
+                                              BorderRadius.circular(8),
+                                          borderSide: BorderSide(
+                                              color: AppColors.primaryLight
+                                                  .withOpacity(_editModeIndices
+                                                          .contains(index)
+                                                      ? 0.3
+                                                      : 0.1)),
                                         ),
                                         focusedBorder: OutlineInputBorder(
-                                          borderRadius: BorderRadius.circular(8),
-                                          borderSide: BorderSide(color: AppColors.primaryLight, width: _editModeIndices.contains(index) ? 2 : 1),
+                                          borderRadius:
+                                              BorderRadius.circular(8),
+                                          borderSide: BorderSide(
+                                              color: AppColors.primaryLight,
+                                              width: _editModeIndices
+                                                      .contains(index)
+                                                  ? 2
+                                                  : 1),
                                         ),
                                       ),
                                     ),
@@ -913,16 +997,23 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
                                       });
                                     },
                                     icon: Icon(
-                                      _editModeIndices.contains(index) ? Icons.edit : Icons.edit_outlined,
-                                      color: _editModeIndices.contains(index) ? AppColors.primaryLight : Colors.white70,
+                                      _editModeIndices.contains(index)
+                                          ? Icons.edit
+                                          : Icons.edit_outlined,
+                                      color: _editModeIndices.contains(index)
+                                          ? AppColors.primaryLight
+                                          : Colors.white70,
                                       size: 20,
                                     ),
-                                    tooltip: _editModeIndices.contains(index) ? 'Finish editing' : 'Edit name',
+                                    tooltip: _editModeIndices.contains(index)
+                                        ? 'Finish editing'
+                                        : 'Edit name',
                                   ),
                                   const SizedBox(width: 8),
                                   IconButton(
                                     onPressed: () => _removeBulkItem(index),
-                                    icon: Icon(Icons.delete, color: Colors.red[300]),
+                                    icon: Icon(Icons.delete,
+                                        color: Colors.red[300]),
                                     tooltip: 'Remove file',
                                   ),
                                 ],
@@ -963,12 +1054,14 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(16),
                               borderSide: BorderSide(
-                                  color: AppColors.primaryLight.withOpacity(0.3)),
+                                  color:
+                                      AppColors.primaryLight.withOpacity(0.3)),
                             ),
                             enabledBorder: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(16),
                               borderSide: BorderSide(
-                                  color: AppColors.primaryLight.withOpacity(0.3)),
+                                  color:
+                                      AppColors.primaryLight.withOpacity(0.3)),
                             ),
                             focusedBorder: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(16),
@@ -1006,8 +1099,8 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
                         onPressed: () async {
                           final selected = await showDialog<String>(
                             context: context,
-                            builder: (_) =>
-                                FolderPickerDialog(initialPath: _folderCtrl.text),
+                            builder: (_) => FolderPickerDialog(
+                                initialPath: _folderCtrl.text),
                           );
                           if (selected?.isNotEmpty == true) {
                             setState(() => _folderCtrl.text = selected!);
@@ -1044,8 +1137,8 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
                 decoration: BoxDecoration(
                   color: AppColors.darkSurface.withOpacity(0.8),
                   borderRadius: BorderRadius.circular(16),
-                  border:
-                      Border.all(color: AppColors.primaryLight.withOpacity(0.3)),
+                  border: Border.all(
+                      color: AppColors.primaryLight.withOpacity(0.3)),
                 ),
                 child: DropdownButtonFormField<int>(
                   value: _chunkSizeMB,
@@ -1070,13 +1163,14 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
               SizedBox(
                 width: double.infinity,
                 child: _buildNeonButton(
-                  onPressed:
-                      _bulkUploadItems.isEmpty || upload.uploading || _isProcessingBundle
-                          ? null
-                          : _upload,
+                  onPressed: _bulkUploadItems.isEmpty ||
+                          upload.uploading ||
+                          _isProcessingBundle
+                      ? null
+                      : _upload,
                   icon: Icons.cloud_upload_outlined,
-                  label: _isUploadInProgress 
-                      ? 'Uploading... (${_bulkUploadItems.length} files)' 
+                  label: _isUploadInProgress
+                      ? 'Uploading... (${_bulkUploadItems.length} files)'
                       : 'Execute upload',
                 ),
               ),
@@ -1113,7 +1207,8 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
                         setState(() {
                           _isCancelled = true;
                         });
-                        _showSnackBar('Upload cancelled by user', Colors.orange);
+                        _showSnackBar(
+                            'Upload cancelled by user', Colors.orange);
                       },
                       icon: Icon(Icons.cancel, color: Colors.red[300]),
                       tooltip: 'Cancel upload',
@@ -1156,11 +1251,13 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
                   decoration: BoxDecoration(
                     color: AppColors.darkSurface.withOpacity(0.6),
                     borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: AppColors.primaryLight.withOpacity(0.3)),
+                    border: Border.all(
+                        color: AppColors.primaryLight.withOpacity(0.3)),
                   ),
                   child: ListView.builder(
                     shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(), // Prevent conflicts with parent scroll
+                    physics:
+                        const NeverScrollableScrollPhysics(), // Prevent conflicts with parent scroll
                     itemCount: _generatedLinks.length,
                     itemBuilder: (context, index) {
                       final linkInfo = _generatedLinks[index];
@@ -1172,7 +1269,8 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
                           decoration: BoxDecoration(
                             color: AppColors.darkBackground.withOpacity(0.6),
                             borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: AppColors.primaryLight.withOpacity(0.2)),
+                            border: Border.all(
+                                color: AppColors.primaryLight.withOpacity(0.2)),
                           ),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1189,23 +1287,45 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
                                 ),
                               ),
                               Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 8.0, vertical: 4.0),
                                 child: Row(
                                   children: [
                                     Expanded(
                                       child: SelectableText(
                                         link,
-                                        style: const TextStyle(color: Colors.white, fontSize: 12),
+                                        style: const TextStyle(
+                                            color: Colors.white, fontSize: 12),
                                       ),
                                     ),
                                     IconButton(
                                       tooltip: 'Copy link',
                                       onPressed: () {
-                                        Clipboard.setData(ClipboardData(text: link));
-                                        _showSnackBar('Link copied to clipboard', Colors.green);
+                                        Clipboard.setData(
+                                            ClipboardData(text: link));
+                                        _showSnackBar(
+                                            'Link copied to clipboard',
+                                            Colors.green);
                                       },
-                                      icon: Icon(Icons.copy, color: AppColors.primaryLight, size: 16),
+                                      icon: Icon(Icons.copy,
+                                          color: AppColors.primaryLight,
+                                          size: 16),
                                     ),
+                                    if (_isFileSupported(fileName))
+                                      IconButton(
+                                        tooltip: 'Open in app',
+                                        onPressed: () {
+                                          final path = linkInfo['path'];
+                                          if (path != null) {
+                                            context.push(
+                                                RouteNames.fileViewerPath(
+                                                    path, fileName));
+                                          }
+                                        },
+                                        icon: Icon(Icons.visibility,
+                                            color: AppColors.primaryLight,
+                                            size: 16),
+                                      ),
                                   ],
                                 ),
                               ),

@@ -7,6 +7,7 @@ import '../../features/authentication/presentation/views/connection_setup_screen
 import '../../features/file_manager/presentation/views/file_manager_screen.dart';
 import '../../features/file_manager/presentation/views/folder_browser_screen.dart';
 import '../../features/file_manager/presentation/views/upload_screen.dart';
+import '../../features/file_manager/presentation/views/file_viewer_screen.dart';
 import '../../features/upload_history/presentation/views/upload_history_screen.dart';
 import '../../features/settings/presentation/views/settings_screen.dart';
 
@@ -52,6 +53,15 @@ class AppRouter {
                 final folderPath =
                     state.uri.queryParameters['folderPath'] ?? '';
                 return UploadScreen(targetFolderPath: folderPath);
+              },
+            ),
+            GoRoute(
+              path: 'viewer',
+              name: RouteNames.fileViewer,
+              builder: (context, state) {
+                final filePath = state.uri.queryParameters['path'] ?? '';
+                final fileName = state.uri.queryParameters['name'] ?? '';
+                return FileViewerScreen(filePath: filePath, fileName: fileName);
               },
             ),
           ],

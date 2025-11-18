@@ -12,6 +12,8 @@ class RouteNames {
   static const String uploadHistory = '/upload-history';
   static const String settings = '/settings';
   
+  static const String fileViewer = 'viewer';
+
   // Utility methods
   static String folderBrowserPath(String folderPath) =>
       '/file-manager/folder/${Uri.encodeComponent(folderPath)}';
@@ -22,5 +24,9 @@ class RouteNames {
       return '$path?folderPath=${Uri.encodeQueryComponent(folderPath)}';
     }
     return path;
+  }
+
+  static String fileViewerPath(String filePath, String fileName) {
+    return '/file-manager/viewer?path=${Uri.encodeQueryComponent(filePath)}&name=${Uri.encodeQueryComponent(fileName)}';
   }
 }

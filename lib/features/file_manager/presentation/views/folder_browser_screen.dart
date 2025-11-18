@@ -58,10 +58,12 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
     // Reload data when the folder path changes
     if (oldWidget.folderPath != widget.folderPath) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        ref.read(folderBrowserViewModelProvider.notifier).load(widget.folderPath);
+        ref
+            .read(folderBrowserViewModelProvider.notifier)
+            .load(widget.folderPath);
       });
     }
- }
+  }
 
   Future<void> _deleteItem(String path, String name, bool isFolder) async {
     final confirmed = await _showDeleteDialog(name, isFolder);
@@ -933,7 +935,26 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
   }
 
   Future<void> _openInBrowser(String path) async {
-    // final url = 'https://project.ibartstech.com$path';
+    // Check if it's a file and if it's a supported type for in-app viewing
+    if (path.contains('.')) {
+      final fileName = path.split('/').last;
+      final ext = fileName.split('.').last.toLowerCase();
+      final supportedExtensions = [
+        // Images
+        'jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp',
+        // Videos
+        'mp4', 'mov', 'avi', 'mkv', 'webm',
+        // Text
+        'txt', 'json', 'xml', 'md', 'html', 'css', 'js', 'dart', 'yaml', 'log'
+      ];
+
+      if (supportedExtensions.contains(ext)) {
+        context.push(RouteNames.fileViewerPath(path, fileName));
+        return;
+      }
+    }
+
+    // Fallback to existing logic for folders or unsupported files
     final generateLinkUsecase = getIt<GenerateLinkUsecase>();
     final String url;
 
@@ -1254,8 +1275,7 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
                     },
                     itemBuilder: (context) => [
                       _buildMenuItem('download', Icons.download, 'Download'),
-                      _buildMenuItem(
-                          'open', Icons.open_in_browser, 'Open in browser'),
+                      _buildMenuItem('open', Icons.visibility, 'View / Open'),
                       _buildMenuItem('copy', Icons.link, 'Copy link'),
                       _buildMenuItem('rename', Icons.edit, 'Rename'),
                       _buildMenuItem('delete', Icons.delete, 'Delete',
@@ -1295,7 +1315,7 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
           // If we're already at the root folder, go to file manager screen
           parentPath = null;
         }
-        
+
         // Navigate to parent folder or back to file manager
         if (parentPath != null && parentPath != widget.folderPath) {
           context.go(RouteNames.folderBrowserPath(parentPath));
@@ -1305,7 +1325,7 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
           context.go(RouteNames.fileManager);
           return false; // Prevent default pop behavior
         }
-        
+
         return true; // Allow normal pop if at root
       },
       child: Scaffold(
@@ -1334,13 +1354,14 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
                   }
                 } else {
                   // If we're at a direct child of root (e.g., /folder1/), go to file manager screen
-                  parentPath = null; // This will cause navigation to file manager
+                  parentPath =
+                      null; // This will cause navigation to file manager
                 }
               } else {
                 // If we're already at the root folder, go to file manager screen
                 parentPath = null;
               }
-              
+
               // Navigate to parent folder or back to file manager
               if (parentPath != null) {
                 context.go(RouteNames.folderBrowserPath(parentPath));
@@ -1382,14 +1403,15 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
                           decoration: InputDecoration(
                             hintText: 'Search files and folders...',
                             hintStyle: TextStyle(color: Colors.white54),
-                            prefixIcon:
-                                Icon(Icons.search, color: AppColors.primaryLight),
+                            prefixIcon: Icon(Icons.search,
+                                color: AppColors.primaryLight),
                             suffixIcon: state.searchQuery != null &&
                                     state.searchQuery!.isNotEmpty
                                 ? IconButton(
                                     icon: Icon(Icons.clear,
                                         color: Colors.grey[400]),
-                                    onPressed: () => viewModel.setSearchQuery(''),
+                                    onPressed: () =>
+                                        viewModel.setSearchQuery(''),
                                   )
                                 : null,
                             border: InputBorder.none,
@@ -1522,7 +1544,7 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
         ),
       ),
     );
- }
+  }
 
   Widget _buildErrorCard(String error) {
     return Padding(
