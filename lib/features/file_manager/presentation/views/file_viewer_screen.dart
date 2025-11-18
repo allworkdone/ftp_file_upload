@@ -208,8 +208,11 @@ class _FileViewerScreenState extends ConsumerState<FileViewerScreen> {
     }
 
     if (_isImageFile) {
-      return Center(
+      return Container(
+        color: Colors.black,
         child: InteractiveViewer(
+          minScale: 0.5,
+          maxScale: 5.0,
           child: CachedNetworkImage(
             imageUrl: _fileUrl!,
             placeholder: (context, url) => Center(
@@ -218,6 +221,9 @@ class _FileViewerScreenState extends ConsumerState<FileViewerScreen> {
             errorWidget: (context, url, error) =>
                 const Icon(Icons.error, color: Colors.red),
             fit: BoxFit.contain,
+            width: double.infinity,
+            height: double.infinity,
+            alignment: Alignment.center,
           ),
         ),
       );
@@ -250,8 +256,16 @@ class _FileViewerScreenState extends ConsumerState<FileViewerScreen> {
                   final newZoomLevel = _pdfViewerController.zoomLevel +
                       (event.scrollDelta.dy > 0 ? -0.1 : 0.1);
                   _pdfViewerController.zoomLevel =
-                      newZoomLevel.clamp(1.0, 3.0); // Clamp zoom level
+                      newZoomLevel.clamp(1.0, 5.0); // Clamp zoom level
                 }
+              }
+            },
+            onPointerPanZoomUpdate: (event) {
+              // Handle trackpad pinch zoom
+              if (event.scale != 1.0) {
+                final newZoomLevel =
+                    _pdfViewerController.zoomLevel * event.scale;
+                _pdfViewerController.zoomLevel = newZoomLevel.clamp(1.0, 5.0);
               }
             },
             child: SfPdfViewer.network(
