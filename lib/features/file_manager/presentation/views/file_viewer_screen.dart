@@ -2,6 +2,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:chewie/chewie.dart';
 import 'package:dio/dio.dart';
 import 'package:syncfusion_flutter_pdfviewer/pdfviewer.dart';
+import 'package:syncfusion_flutter_core/theme.dart';
 import 'package:file_upload/core/di/injection.dart';
 import 'package:file_upload/features/file_manager/domain/usecases/generate_link_usecase.dart';
 import 'package:flutter/material.dart';
@@ -162,6 +163,13 @@ class _FileViewerScreenState extends ConsumerState<FileViewerScreen> {
     return ext == 'pdf';
   }
 
+  void _handleZoom(double scaleDelta) {
+    setState(() {
+      final newZoom = _pdfViewerController.zoomLevel + scaleDelta;
+      _pdfViewerController.zoomLevel = newZoom.clamp(0.25, 10.0);
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -255,44 +263,49 @@ class _FileViewerScreenState extends ConsumerState<FileViewerScreen> {
                     HardwareKeyboard.instance
                         .isLogicalKeyPressed(LogicalKeyboardKey.controlRight);
                 if (isCtrlPressed) {
-                  final newZoomLevel = _pdfViewerController.zoomLevel +
-                      (event.scrollDelta.dy > 0 ? -0.1 : 0.1);
-                  _pdfViewerController.zoomLevel =
-                      newZoomLevel.clamp(1.0, 5.0); // Clamp zoom level
+                  final delta = event.scrollDelta.dy > 0 ? -0.1 : 0.1;
+                  _handleZoom(delta);
                 }
               }
             },
             onPointerPanZoomUpdate: (event) {
               // Handle trackpad pinch zoom
               if (event.scale != 1.0) {
-                final newZoomLevel =
-                    _pdfViewerController.zoomLevel * event.scale;
-                _pdfViewerController.zoomLevel = newZoomLevel.clamp(1.0, 5.0);
+                final delta = (event.scale - 1.0);
+                _handleZoom(delta);
               }
             },
-            child: SfPdfViewer.network(
-              _fileUrl!,
-              controller: _pdfViewerController,
-              key: _pdfViewerKey,
-              enableDoubleTapZooming: true,
-              enableTextSelection: true,
-              canShowScrollHead: true,
-              canShowScrollStatus: true,
-              onDocumentLoaded: (PdfDocumentLoadedDetails details) {
-                setState(() {
-                  _totalPages = details.document.pages.count;
-                });
-              },
-              onPageChanged: (PdfPageChangedDetails details) {
-                setState(() {
-                  _currentPage = details.newPageNumber;
-                });
-              },
-              onDocumentLoadFailed: (PdfDocumentLoadFailedDetails details) {
-                setState(() {
-                  _error = 'Failed to load PDF: ${details.error}';
-                });
-              },
+            child: SfPdfViewerTheme(
+              data: SfPdfViewerThemeData(
+                backgroundColor: Colors.transparent,
+                progressBarColor: AppColors.primaryLight,
+              ),
+              child: SfPdfViewer.network(
+                _fileUrl!,
+                controller: _pdfViewerController,
+                key: _pdfViewerKey,
+                enableDoubleTapZooming: true,
+                enableTextSelection: true,
+                canShowScrollHead: true,
+                canShowScrollStatus: true,
+                pageLayoutMode: PdfPageLayoutMode.continuous,
+                maxZoomLevel: 10.0,
+                onDocumentLoaded: (PdfDocumentLoadedDetails details) {
+                  setState(() {
+                    _totalPages = details.document.pages.count;
+                  });
+                },
+                onPageChanged: (PdfPageChangedDetails details) {
+                  setState(() {
+                    _currentPage = details.newPageNumber;
+                  });
+                },
+                onDocumentLoadFailed: (PdfDocumentLoadFailedDetails details) {
+                  setState(() {
+                    _error = 'Failed to load PDF: ${details.error}';
+                  });
+                },
+              ),
             ),
           ),
           if (_totalPages > 0)
