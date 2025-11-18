@@ -224,6 +224,8 @@ class _FileViewerScreenState extends ConsumerState<FileViewerScreen> {
             width: double.infinity,
             height: double.infinity,
             alignment: Alignment.center,
+            filterQuality: FilterQuality.high,
+            memCacheWidth: 2048, // Request higher resolution from cache
           ),
         ),
       );
