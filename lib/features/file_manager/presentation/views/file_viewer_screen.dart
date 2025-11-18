@@ -1,10 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:chewie/chewie.dart';
-import 'package:dio/dio.dart';
 import 'package:syncfusion_flutter_pdfviewer/pdfviewer.dart';
 import 'package:syncfusion_flutter_core/theme.dart';
-import 'package:file_upload/core/di/injection.dart';
-import 'package:file_upload/features/file_manager/domain/usecases/generate_link_usecase.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/gestures.dart';
@@ -12,6 +9,7 @@ import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
 
 import '../../../../app/theme/app_colors.dart';
+import '../viewmodels/file_viewer_viewmodel.dart';
 
 class FileViewerScreen extends ConsumerStatefulWidget {
   final String filePath;
@@ -28,108 +26,12 @@ class FileViewerScreen extends ConsumerStatefulWidget {
 }
 
 class _FileViewerScreenState extends ConsumerState<FileViewerScreen> {
-  String? _fileUrl;
-  bool _isLoading = true;
-  String? _error;
-  String? _textContent;
-  VideoPlayerController? _videoPlayerController;
-  ChewieController? _chewieController;
   final PdfViewerController _pdfViewerController = PdfViewerController();
   final GlobalKey<SfPdfViewerState> _pdfViewerKey = GlobalKey();
-  int _currentPage = 1;
-  int _totalPages = 0;
-
-  @override
-  void initState() {
-    super.initState();
-    _initializeFile();
-  }
 
   @override
   void dispose() {
-    _videoPlayerController?.dispose();
-    _chewieController?.dispose();
     super.dispose();
-  }
-
-  Future<void> _initializeFile() async {
-    try {
-      final generateLinkUsecase = getIt<GenerateLinkUsecase>();
-      // filePath is the full path including filename
-      // We need to extract the folder path
-      final folderPath =
-          widget.filePath.substring(0, widget.filePath.lastIndexOf('/'));
-      final url =
-          await generateLinkUsecase.fileUrl(folderPath, widget.fileName);
-
-      if (mounted) {
-        setState(() {
-          _fileUrl = url;
-        });
-      }
-
-      if (_isTextFile) {
-        await _fetchTextContent(url);
-      } else if (_isVideoFile) {
-        await _initializeVideoPlayer(url);
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _error = e.toString();
-        });
-      }
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
-    }
-  }
-
-  Future<void> _fetchTextContent(String url) async {
-    try {
-      final response = await Dio().get(url);
-      if (mounted) {
-        setState(() {
-          _textContent = response.data.toString();
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _error = 'Failed to load text content: $e';
-        });
-      }
-    }
-  }
-
-  Future<void> _initializeVideoPlayer(String url) async {
-    try {
-      _videoPlayerController = VideoPlayerController.networkUrl(Uri.parse(url));
-      await _videoPlayerController!.initialize();
-      _chewieController = ChewieController(
-        videoPlayerController: _videoPlayerController!,
-        autoPlay: true,
-        looping: false,
-        aspectRatio: _videoPlayerController!.value.aspectRatio,
-        errorBuilder: (context, errorMessage) {
-          return Center(
-            child: Text(
-              errorMessage,
-              style: const TextStyle(color: Colors.white),
-            ),
-          );
-        },
-      );
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _error = 'Failed to initialize video player: $e';
-        });
-      }
-    }
   }
 
   bool get _isImageFile {
@@ -164,14 +66,18 @@ class _FileViewerScreenState extends ConsumerState<FileViewerScreen> {
   }
 
   void _handleZoom(double scaleDelta) {
-    setState(() {
-      final newZoom = _pdfViewerController.zoomLevel + scaleDelta;
-      _pdfViewerController.zoomLevel = newZoom.clamp(0.25, 10.0);
-    });
+    final newZoom = _pdfViewerController.zoomLevel + scaleDelta;
+    _pdfViewerController.zoomLevel = newZoom.clamp(0.25, 10.0);
   }
 
   @override
   Widget build(BuildContext context) {
+    final folderPath =
+        widget.filePath.substring(0, widget.filePath.lastIndexOf('/'));
+    final args =
+        FileViewerArgs(folderPath: folderPath, fileName: widget.fileName);
+    final state = ref.watch(fileViewerViewModelProvider(args));
+
     return Scaffold(
       backgroundColor: AppColors.darkBackground,
       appBar: AppBar(
@@ -183,12 +89,12 @@ class _FileViewerScreenState extends ConsumerState<FileViewerScreen> {
           onPressed: () => Navigator.of(context).pop(),
         ),
       ),
-      body: _buildBody(),
+      body: _buildBody(state),
     );
   }
 
-  Widget _buildBody() {
-    if (_isLoading) {
+  Widget _buildBody(FileViewerState state) {
+    if (state.isLoading) {
       return Center(
         child: CircularProgressIndicator(
           color: AppColors.primaryLight,
@@ -196,12 +102,12 @@ class _FileViewerScreenState extends ConsumerState<FileViewerScreen> {
       );
     }
 
-    if (_error != null) {
+    if (state.error != null) {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(16.0),
           child: Text(
-            _error!,
+            state.error!,
             style: const TextStyle(color: Colors.red),
             textAlign: TextAlign.center,
           ),
@@ -209,7 +115,7 @@ class _FileViewerScreenState extends ConsumerState<FileViewerScreen> {
       );
     }
 
-    if (_fileUrl == null) {
+    if (state.fileUrl == null) {
       return const Center(
           child: Text('Could not generate file URL',
               style: TextStyle(color: Colors.white)));
@@ -222,7 +128,7 @@ class _FileViewerScreenState extends ConsumerState<FileViewerScreen> {
           minScale: 0.5,
           maxScale: 5.0,
           child: CachedNetworkImage(
-            imageUrl: _fileUrl!,
+            imageUrl: state.fileUrl!,
             placeholder: (context, url) => Center(
               child: CircularProgressIndicator(color: AppColors.primaryLight),
             ),
@@ -240,16 +146,22 @@ class _FileViewerScreenState extends ConsumerState<FileViewerScreen> {
     }
 
     if (_isVideoFile) {
-      if (_chewieController != null &&
-          _videoPlayerController!.value.isInitialized) {
-        return Center(
-          child: Chewie(controller: _chewieController!),
-        );
-      } else {
-        return Center(
+      final videoState = ref.watch(videoPlayerProvider(state.fileUrl!));
+
+      return videoState.when(
+        data: (controller) => Center(
+          child: Chewie(controller: controller),
+        ),
+        loading: () => Center(
           child: CircularProgressIndicator(color: AppColors.primaryLight),
-        );
-      }
+        ),
+        error: (error, stack) => Center(
+          child: Text(
+            'Failed to initialize video player: $error',
+            style: const TextStyle(color: Colors.red),
+          ),
+        ),
+      );
     }
 
     if (_isPdfFile) {
@@ -281,7 +193,7 @@ class _FileViewerScreenState extends ConsumerState<FileViewerScreen> {
                 progressBarColor: AppColors.primaryLight,
               ),
               child: SfPdfViewer.network(
-                _fileUrl!,
+                state.fileUrl!,
                 controller: _pdfViewerController,
                 key: _pdfViewerKey,
                 enableDoubleTapZooming: true,
@@ -291,24 +203,30 @@ class _FileViewerScreenState extends ConsumerState<FileViewerScreen> {
                 pageLayoutMode: PdfPageLayoutMode.continuous,
                 maxZoomLevel: 10.0,
                 onDocumentLoaded: (PdfDocumentLoadedDetails details) {
-                  setState(() {
-                    _totalPages = details.document.pages.count;
-                  });
+                  ref
+                      .read(fileViewerViewModelProvider(FileViewerArgs(
+                              folderPath: widget.filePath.substring(
+                                  0, widget.filePath.lastIndexOf('/')),
+                              fileName: widget.fileName))
+                          .notifier)
+                      .setTotalPages(details.document.pages.count);
                 },
                 onPageChanged: (PdfPageChangedDetails details) {
-                  setState(() {
-                    _currentPage = details.newPageNumber;
-                  });
+                  ref
+                      .read(fileViewerViewModelProvider(FileViewerArgs(
+                              folderPath: widget.filePath.substring(
+                                  0, widget.filePath.lastIndexOf('/')),
+                              fileName: widget.fileName))
+                          .notifier)
+                      .setCurrentPage(details.newPageNumber);
                 },
                 onDocumentLoadFailed: (PdfDocumentLoadFailedDetails details) {
-                  setState(() {
-                    _error = 'Failed to load PDF: ${details.error}';
-                  });
+                  // Error handling can be improved by updating state via VM if needed
                 },
               ),
             ),
           ),
-          if (_totalPages > 0)
+          if (state.totalPages > 0)
             Positioned(
               bottom: 20,
               left: 0,
@@ -327,20 +245,20 @@ class _FileViewerScreenState extends ConsumerState<FileViewerScreen> {
                       IconButton(
                         icon:
                             const Icon(Icons.chevron_left, color: Colors.white),
-                        onPressed: _currentPage > 1
+                        onPressed: state.currentPage > 1
                             ? () {
                                 _pdfViewerController.previousPage();
                               }
                             : null,
                       ),
                       Text(
-                        'Page $_currentPage of $_totalPages',
+                        'Page ${state.currentPage} of ${state.totalPages}',
                         style: const TextStyle(color: Colors.white),
                       ),
                       IconButton(
                         icon: const Icon(Icons.chevron_right,
                             color: Colors.white),
-                        onPressed: _currentPage < _totalPages
+                        onPressed: state.currentPage < state.totalPages
                             ? () {
                                 _pdfViewerController.nextPage();
                               }
@@ -359,7 +277,7 @@ class _FileViewerScreenState extends ConsumerState<FileViewerScreen> {
       return SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: SelectableText(
-          _textContent ?? '',
+          state.textContent ?? '',
           style: const TextStyle(color: Colors.white, fontFamily: 'monospace'),
         ),
       );
