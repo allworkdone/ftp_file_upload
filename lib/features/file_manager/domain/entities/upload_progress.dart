@@ -69,6 +69,12 @@ class UploadProgress extends Equatable {
     return null;
   }
 
+  double get uploadSpeed {
+    final durationInSeconds = DateTime.now().difference(startTime).inSeconds;
+    if (durationInSeconds == 0) return 0.0;
+    return uploadedBytes / durationInSeconds;
+  }
+
   // String get targetUrl {
   //   final cleanFolderPath = targetFolderPath.isEmpty
   //       ? ''

@@ -659,6 +659,18 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
     }
   }
 
+  String _formatSpeed(double bytesPerSecond) {
+    if (bytesPerSecond < 1024) {
+      return '${bytesPerSecond.toStringAsFixed(0)} B/s';
+    } else if (bytesPerSecond < 1024 * 1024) {
+      return '${(bytesPerSecond / 1024).toStringAsFixed(1)} KB/s';
+    } else if (bytesPerSecond < 1024 * 1024 * 1024) {
+      return '${(bytesPerSecond / (1024 * 1024)).toStringAsFixed(2)} MB/s';
+    } else {
+      return '${(bytesPerSecond / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB/s';
+    }
+  }
+
   Widget _buildDropArea() {
     return Container(
       width: double.infinity,
@@ -1199,7 +1211,7 @@ class _FileUploadWidgetState extends ConsumerState<FileUploadWidget> {
                       child: Text(
                         upload.progress == null
                             ? 'Starting…'
-                            : '${upload.progress!.fileName} — ${upload.progress!.progressPercentage.toStringAsFixed(0)}%',
+                            : '${upload.progress!.fileName} — ${upload.progress!.progressPercentage.toStringAsFixed(0)}% • ${_formatSpeed(upload.progress!.uploadSpeed)}',
                         style: const TextStyle(color: Colors.white70),
                         textAlign: TextAlign.center,
                       ),
